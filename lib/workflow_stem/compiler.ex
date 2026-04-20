@@ -47,6 +47,82 @@ defmodule WorkflowStem.Compiler do
   end
 
   @doc """
+  Returns the full engine-topology descriptor list for a spec, ready to
+  be emitted via `WorkflowStem.Pipeline.Builder.build/3`.
+
+  The topology mirrors the static `WorkflowStem.Pipelines.Stepwise`
+  pipeline but replaces its single `StepwiseAction` stage with a
+  `switch(:__current_state__, branches: ...)` that dispatches per-state:
+
+      [
+        stage(StepwiseContextMerge),
+        switch(:__current_state__, branches: %{
+          state_a: <descriptors from state_a's :route, or default>,
+          state_b: <descriptors from state_b's :route, or default>,
+          ...
+        }),
+        stage(StepwiseAdvance),
+        stage(StepwiseEntryAction),
+        stage(FsmBreakpoint),
+        stage(StepwiseProjection)
+      ]
+
+  States without a `:route` get a default body of `[stage(StepwiseAction)]`
+  so the existing per-state action dispatcher keeps working for them.
+
+  Use `engine_routing/1` to get the routing-resolver map that must
+  accompany these descriptors when calling `Builder.build/3`.
+  """
+  @spec components_for_engine(IR.t()) :: [descriptor()]
+  def components_for_engine(%{} = spec) do
+    states = Map.get(spec, :states, %{})
+
+    state_branches =
+      Map.new(states, fn {state_name, state_data} ->
+        body = state_branch_body(state_data, state_name, spec)
+        {state_name, body}
+      end)
+
+    switch_descriptor =
+      {:switch, :__current_state__,
+       %{
+         state: :__wrapper__,
+         count: 1,
+         opts: [],
+         resolver: {WorkflowStem.Compiler.Resolvers, :current_state},
+         branches: state_branches
+       }}
+
+    [
+      stage_descriptor(WorkflowStem.Components.StepwiseContextMerge),
+      switch_descriptor,
+      stage_descriptor(WorkflowStem.Components.StepwiseAdvance),
+      stage_descriptor(WorkflowStem.Components.StepwiseEntryAction),
+      stage_descriptor(WorkflowStem.Components.FsmBreakpoint),
+      stage_descriptor(WorkflowStem.Components.StepwiseProjection)
+    ]
+  end
+
+  @doc """
+  Returns the routing map that must be passed to `Builder.build/3`
+  alongside `components_for_engine/1`.
+
+  Merges the spec's user-declared `:routing` with the internal
+  `:__current_state__` delegate that the synthesised wrapper switch
+  needs to resolve.
+  """
+  @spec engine_routing(IR.t()) :: map()
+  def engine_routing(%{} = spec) do
+    user_routing = Map.get(spec, :routing, %{})
+
+    Map.put(
+      user_routing,
+      :__current_state__,
+      {WorkflowStem.Compiler.Resolvers, :current_state}
+    )
+  end
+
+  @doc """
   Returns a flat list of component descriptors for every `:route` in the
   spec. Each descriptor's `:state` field records the owning state name.
 
@@ -88,6 +164,24 @@ defmodule WorkflowStem.Compiler do
   end
 
   # ── Private ─────────────────────────────────────────────────────────
+
+  defp state_branch_body(state_data, state_name, spec) do
+    case route_of(state_data) do
+      nil ->
+        # Default: the existing per-state action dispatcher. Same
+        # behaviour as a state without :route today.
+        [stage_descriptor(WorkflowStem.Components.StepwiseAction)]
+
+      route ->
+        route
+        |> List.wrap()
+        |> Enum.map(&build(&1, state_name, spec))
+    end
+  end
+
+  defp stage_descriptor(module) when is_atom(module) do
+    {:stage, module, %{state: :__wrapper__, count: 1, opts: []}}
+  end
 
   defp has_route?(%{route: _}), do: true
   defp has_route?(%{"route" => _}), do: true

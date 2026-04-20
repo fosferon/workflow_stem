@@ -56,6 +56,17 @@ defmodule WorkflowStem.Pipeline.Builder do
           unquote_splicing(delegates_ast)
 
           @components unquote(components_ast)
+
+          # Mirror the idempotent start convention used by
+          # WorkflowStem.Pipelines.Stepwise so StepwiseEngine can call
+          # pipeline_mod.ensure_started/1 uniformly for static + generated.
+          @spec ensure_started(keyword()) :: :ok | {:error, term()}
+          def ensure_started(opts \\ []) do
+            case Process.whereis(__MODULE__) do
+              nil -> __MODULE__.start(opts)
+              _pid -> :ok
+            end
+          end
         end
       end
 

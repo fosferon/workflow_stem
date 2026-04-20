@@ -85,18 +85,15 @@ defmodule WorkflowStem.RegistryInstanceTest do
       refute mod_a == mod_b
     end
 
-    test "the compiled module actually runs and routes through ALF" do
+    test "the compiled module exposes the spec's routing resolvers as delegates" do
       {:ok, mod} = Registry.ensure_instance("agent-a", "registry-test-routed", routed_spec())
 
-      # The module is already started by ensure_instance — just call it.
-      result_x = mod.call(%{choose: :x})
-      result_y = mod.call(%{choose: :y})
-
-      # Both branches in this test spec are passthroughs; the event returns
-      # unchanged. What matters is ALF didn't error — meaning the switch
-      # resolver (defdelegate) was callable and returned a valid branch key.
-      assert result_x.choose == :x
-      assert result_y.choose == :y
+      # The generated module carries `defdelegate pick_branch(event, opts), to: Routers`
+      # so ALF's switch can resolve via apply(mod, :pick_branch, [event, opts]).
+      # Direct end-to-end flow through the engine is covered by
+      # `engine_routed_spec_test.exs`.
+      assert mod.pick_branch(%{choose: :y}, []) == :y
+      assert mod.pick_branch(%{choose: :anything_else}, []) == :x
     end
 
     test "returns {:error, {:unknown_workflow, handle}} for a missing spec" do

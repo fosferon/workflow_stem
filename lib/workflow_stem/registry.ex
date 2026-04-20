@@ -163,9 +163,10 @@ defmodule WorkflowStem.Registry do
     case :persistent_term.get(key, nil) do
       nil ->
         with :ok <- validate_spec(spec),
-             descriptors <- Compiler.components_for(spec),
+             descriptors <- Compiler.components_for_engine(spec),
+             routing <- Compiler.engine_routing(spec),
              module_name <- generated_module_name(agent_id, workflow_handle),
-             {:ok, mod} <- Builder.build(module_name, descriptors, Map.get(spec, :routing, %{})),
+             {:ok, mod} <- Builder.build(module_name, descriptors, routing),
              :ok <- ensure_started(mod) do
           :persistent_term.put(key, mod)
           {:ok, mod}
