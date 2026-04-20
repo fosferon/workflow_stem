@@ -70,5 +70,57 @@ defmodule WorkflowStem.IRTest do
       assert ir.custom_field == "hello"
       assert ir.nested == %{a: 1}
     end
+
+    test "defaults routing to empty map" do
+      ir = IR.normalize(%{profile: :stepwise})
+      assert ir.routing == %{}
+    end
+
+    test "preserves routing map" do
+      routing = %{triage: {SomeMod, :pick}}
+      ir = IR.normalize(%{profile: :stepwise, routing: routing})
+      assert ir.routing == routing
+    end
+
+    test "normalizes string-keyed routing" do
+      ir = IR.normalize(%{"profile" => "stepwise", "routing" => %{r: {M, :f}}})
+      assert ir.routing == %{r: {M, :f}}
+    end
+  end
+
+  describe "route_for_state/2" do
+    test "returns the route tuple when a state declares one" do
+      spec =
+        IR.normalize(%{
+          profile: :stepwise,
+          states: %{
+            a: %{route: {:switch, :r, %{x: [], y: []}}}
+          }
+        })
+
+      assert IR.route_for_state(spec, :a) == {:switch, :r, %{x: [], y: []}}
+    end
+
+    test "returns nil for a state without :route" do
+      spec = IR.normalize(%{profile: :stepwise, states: %{a: %{action: %{type: :noop}}}})
+      assert IR.route_for_state(spec, :a) == nil
+    end
+
+    test "returns nil for an unknown state name" do
+      spec = IR.normalize(%{profile: :stepwise, states: %{}})
+      assert IR.route_for_state(spec, :unknown) == nil
+    end
+  end
+
+  describe "routing_for/2" do
+    test "returns the {mod, fun} resolver tuple when present" do
+      spec = IR.normalize(%{profile: :stepwise, routing: %{r: {SomeMod, :pick}}})
+      assert IR.routing_for(spec, :r) == {SomeMod, :pick}
+    end
+
+    test "returns nil for an unknown route name" do
+      spec = IR.normalize(%{profile: :stepwise, routing: %{}})
+      assert IR.routing_for(spec, :unknown) == nil
+    end
   end
 end
