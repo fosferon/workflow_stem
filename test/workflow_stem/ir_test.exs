@@ -1,0 +1,74 @@
+defmodule WorkflowStem.IRTest do
+  use ExUnit.Case, async: true
+
+  alias WorkflowStem.IR
+
+  describe "normalize/1" do
+    test "normalizes string profile to atom" do
+      spec = %{"profile" => "stepwise", "initial_state" => :start, "states" => %{}}
+      ir = IR.normalize(spec)
+      assert ir.profile == :stepwise
+    end
+
+    test "preserves atom profile" do
+      spec = %{profile: :fsm, initial_state: :idle, states: %{}}
+      ir = IR.normalize(spec)
+      assert ir.profile == :fsm
+    end
+
+    test "normalizes all three profiles" do
+      for p <- ["stepwise", "fsm", "flow"] do
+        ir = IR.normalize(%{"profile" => p, "states" => %{}})
+        assert ir.profile == String.to_atom(p)
+      end
+    end
+
+    test "preserves initial_state" do
+      spec = %{profile: :stepwise, initial_state: :greeting, states: %{}}
+      ir = IR.normalize(spec)
+      assert ir.initial_state == :greeting
+    end
+
+    test "preserves string initial_state" do
+      spec = %{"profile" => "fsm", "initial_state" => "idle", "states" => %{}}
+      ir = IR.normalize(spec)
+      assert ir.initial_state == "idle"
+    end
+
+    test "defaults states to empty map when missing" do
+      ir = IR.normalize(%{profile: :stepwise})
+      assert ir.states == %{}
+    end
+
+    test "preserves existing states" do
+      states = %{step_1: %{step_number: 0}, step_2: %{step_number: 1}}
+      ir = IR.normalize(%{profile: :stepwise, states: states})
+      assert ir.states == states
+    end
+
+    test "normalizes transitions from list to map" do
+      transitions = [{:next, %{to: :step_2}}, {:back, %{to: :step_1}}]
+      ir = IR.normalize(%{profile: :stepwise, transitions: transitions})
+      assert is_map(ir.transitions)
+      assert ir.transitions[:next] == %{to: :step_2}
+    end
+
+    test "preserves map transitions" do
+      transitions = %{next: %{to: :step_2}, back: %{to: :step_1}}
+      ir = IR.normalize(%{profile: :stepwise, transitions: transitions})
+      assert ir.transitions == transitions
+    end
+
+    test "defaults transitions to empty map" do
+      ir = IR.normalize(%{profile: :stepwise})
+      assert ir.transitions == %{}
+    end
+
+    test "preserves extra fields" do
+      spec = %{profile: :stepwise, custom_field: "hello", nested: %{a: 1}}
+      ir = IR.normalize(spec)
+      assert ir.custom_field == "hello"
+      assert ir.nested == %{a: 1}
+    end
+  end
+end

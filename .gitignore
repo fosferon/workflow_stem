@@ -1,0 +1,23 @@
+# Build
+/_build/
+/deps/
+
+# Runtime
+*.beam
+.erlang.cookie
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+.logs/
+
+# PI internal
+.pi/
