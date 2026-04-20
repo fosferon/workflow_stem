@@ -77,11 +77,11 @@ defmodule WorkflowStem.Components.StepwiseAction do
     Application.get_env(:workflow_stem, :conversation_handler)
   end
 
-  defp delegate_conversation(event, runtime, trigger, payload, action_config) do
+  defp delegate_conversation(event, _runtime, trigger, payload, action_config) do
     handler = conversation_handler()
 
-    if is_atom(handler) and function_exported?(handler, :handle_conversation, 5) do
-      handler.handle_conversation(event, runtime, trigger, payload, action_config)
+    if is_atom(handler) and Code.ensure_loaded?(handler) and function_exported?(handler, :handle_conversation, 5) do
+      handler.handle_conversation(event, event.runtime, trigger, payload, action_config)
     else
       event
     end
