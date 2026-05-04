@@ -3,6 +3,13 @@ defmodule WorkflowStem.Components.StepwiseProjection do
   Projection component for `:stepwise` workflows.
 
   Produces canonical `WorkflowStem.Projection` from the current runtime state.
+
+  ## Projection enricher hook
+
+  When `spec.projection_enricher` names a module exporting `enrich/2`, it is
+  called with the base extensions map and the runtime, and its return replaces
+  `projection.extensions`. Consumer-agnostic: any host application can inject
+  custom fields into the projection for its projector layer.
   """
 
   alias WorkflowStem.Projection
@@ -23,7 +30,8 @@ defmodule WorkflowStem.Components.StepwiseProjection do
       artifacts: Map.get(runtime, :artifacts, %{}),
       ui: ui_for(spec, current, runtime),
       errors: Map.get(runtime, :errors, []),
-      trace: Map.get(runtime, :trace, [])
+      trace: Map.get(runtime, :trace, []),
+      extensions: build_extensions(spec, runtime)
     }
 
     runtime = Map.put(runtime, :projection, projection)
@@ -143,6 +151,33 @@ defmodule WorkflowStem.Components.StepwiseProjection do
       String.to_existing_atom(key)
     rescue
       ArgumentError -> nil
+    end
+  end
+
+  # Builds the projection extensions map. When `spec.projection_enricher`
+  # names a module exporting `enrich/2`, it is called with the base
+  # extensions and the runtime, and its return replaces the extensions map.
+  # When absent, extensions contain just the runtime meta (if any).
+  defp build_extensions(spec, runtime) do
+    base = %{meta: Map.get(runtime, :meta, %{})}
+
+    case Map.get(spec, :projection_enricher) do
+      nil ->
+        base
+
+      module when is_atom(module) ->
+        if function_exported?(module, :enrich, 2) do
+          try do
+            module.enrich(base, runtime)
+          rescue
+            _ -> base
+          end
+        else
+          base
+        end
+
+      _ ->
+        base
     end
   end
 

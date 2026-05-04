@@ -1,23 +1,12 @@
 defmodule WorkflowStem.Components.StepwiseContextMerge do
   @moduledoc """
-  Merges inbound payload into `runtime.context` for `:stepwise` workflows.
+  Re-exports `Mobus.Stepwise.Components.StepwiseContextMerge` under the
+  workflow_stem namespace.
 
-  Stepwise workflows are wizard-like; user input is typically collected over
-  multiple events. This component ensures that payload updates persist in the
-  in-band runtime context, enabling resume and later step actions.
+  See `Mobus.Stepwise.Components.StepwiseContextMerge` for full
+  documentation.
   """
 
-  @spec call(map(), map()) :: map()
-  def call(%{status: :error} = event, _opts), do: event
-
-  def call(%{runtime: runtime, payload: payload} = event, _opts) when is_map(payload) do
-    runtime =
-      runtime
-      |> Map.update(:context, %{}, fn ctx -> Map.merge(ctx, payload) end)
-
-    %{event | runtime: runtime}
-  end
-
-  def call(event, _opts), do: event
+  defdelegate call(event, opts), to: Mobus.Stepwise.Components.StepwiseContextMerge
 end
 

@@ -102,8 +102,8 @@ defmodule WorkflowStem.StepwiseEngineTest do
 
       assert {:ok, runtime} = StepwiseEngine.init(@conversation_spec, context)
       assert runtime.current_state == :stage_a
-      # The test conversation handler should have set an agent_response
-      assert get_in(runtime, [:context, "agent_response"]) != nil
+      # The test conversation handler should have set a conversation_response
+      assert get_in(runtime, [:context, "conversation_response"]) != nil
     end
   end
 
@@ -177,14 +177,14 @@ defmodule WorkflowStem.StepwiseEngineTest do
 
     test "delegates chat_message to conversation handler", %{runtime: runtime} do
       assert {:ok, updated} = StepwiseEngine.handle_event(runtime, :chat_message, %{"message" => "hello"})
-      assert get_in(updated, [:context, "agent_response"]) != nil
+      assert get_in(updated, [:context, "conversation_response"]) != nil
     end
 
     test "accumulates chat history across turns", %{runtime: runtime} do
       {:ok, r2} = StepwiseEngine.handle_event(runtime, :chat_message, %{"message" => "hello"})
       {:ok, r3} = StepwiseEngine.handle_event(r2, :chat_message, %{"message" => "more"})
 
-      history = r3.context["chat_history"] || []
+      history = r3.context["conversation_history"] || []
       # Should have entries from init (enter) + 2 chat messages
       assert length(history) >= 2
     end
@@ -195,7 +195,7 @@ defmodule WorkflowStem.StepwiseEngineTest do
 
       # The test handler sets next_event when completion_signal is configured
       # and the handler simulates stage complete
-      assert get_in(r2, [:context, "agent_response"]) != nil
+      assert get_in(r2, [:context, "conversation_response"]) != nil
     end
   end
 

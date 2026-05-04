@@ -9,11 +9,26 @@ defmodule WorkflowStem.Components.StepwiseAdvance do
   Supported events:
   - `:next` / `"next"`
   - `:back` / `"back"`
+
+  ## Wait short-circuit
+
+  When the preceding `StepwiseAction` stage sets `event.wait` (capability
+  returned `{:wait, ...}`), this stage short-circuits — the step that
+  produced the wait stays current until the caller resumes.
+
+  ## Transition policy hook
+
+  When `spec.transition_policy` names a module exporting
+  `allow_transition?/5`, it is called before every state move. The module
+  can return `:allow`, `{:redirect, state}`, or `{:deny, reason}`. Fail-open:
+  absent or misconfigured modules are treated as `:allow`.
   """
 
   @spec call(map(), map()) :: map()
   def call(%{skip_transition: true} = event, _opts), do: event
   def call(%{status: :error} = event, _opts), do: event
+  # Capability yielded wait — do not advance.
+  def call(%{wait: wait} = event, _opts) when not is_nil(wait), do: event
 
   def call(%{spec: spec, runtime: runtime, event: event_name, payload: payload} = event, _opts)
       when is_map(payload) do
@@ -23,16 +38,16 @@ defmodule WorkflowStem.Components.StepwiseAdvance do
     runtime =
       case normalize_event_key(event_name) do
         :next ->
-          maybe_move(runtime, ordered, current, :next)
+          maybe_move(runtime, ordered, current, :next, spec)
 
         "next" ->
-          maybe_move(runtime, ordered, current, :next)
+          maybe_move(runtime, ordered, current, :next, spec)
 
         :back ->
-          maybe_move(runtime, ordered, current, :back)
+          maybe_move(runtime, ordered, current, :back, spec)
 
         "back" ->
-          maybe_move(runtime, ordered, current, :back)
+          maybe_move(runtime, ordered, current, :back, spec)
 
         _ ->
           maybe_apply_explicit_transition(runtime, spec, event_name, current)
@@ -47,7 +62,7 @@ defmodule WorkflowStem.Components.StepwiseAdvance do
   def call(event, _opts),
     do: Map.put(event, :status, :error) |> Map.put(:error, :invalid_stepwise_shape)
 
-  defp maybe_move(runtime, ordered, current, dir) when is_list(ordered) do
+  defp maybe_move(runtime, ordered, current, dir, spec) when is_list(ordered) do
     idx = Enum.find_index(ordered, &equivalent_state?(&1, current))
 
     next_state =
@@ -68,14 +83,16 @@ defmodule WorkflowStem.Components.StepwiseAdvance do
     if is_nil(next_state) do
       runtime
     else
-      runtime
-      |> Map.put(:current_state, next_state)
-      |> Map.update(:history, [], fn hist ->
-        hist ++ [%{event: dir, from: current, to: next_state, at: DateTime.utc_now()}]
-      end)
-      |> Map.update(:trace, [], fn trace ->
-        trace ++ [%{kind: :step, direction: dir, from: current, to: next_state}]
-      end)
+      case apply_transition_policy(spec, runtime, current, next_state, dir) do
+        :allow ->
+          commit_move(runtime, current, next_state, dir)
+
+        {:redirect, target} ->
+          commit_move(runtime, current, target, dir)
+
+        {:deny, reason} ->
+          Map.update(runtime, :blocked_reasons, %{}, &Map.put(&1, dir, reason))
+      end
     end
   end
 
@@ -115,14 +132,56 @@ defmodule WorkflowStem.Components.StepwiseAdvance do
         runtime
 
       to_state ->
-        runtime
-        |> Map.put(:current_state, to_state)
-        |> Map.update(:history, [], fn hist ->
-          hist ++ [%{event: event_name, from: current, to: to_state, at: DateTime.utc_now()}]
-        end)
-        |> Map.update(:trace, [], fn trace ->
-          trace ++ [%{kind: :step, event: event_name, from: current, to: to_state}]
-        end)
+        case apply_transition_policy(spec, runtime, current, to_state, event_name) do
+          :allow ->
+            commit_move(runtime, current, to_state, event_name)
+
+          {:redirect, target} ->
+            commit_move(runtime, current, target, event_name)
+
+          {:deny, reason} ->
+            Map.update(runtime, :blocked_reasons, %{}, &Map.put(&1, event_name, reason))
+        end
+    end
+  end
+
+  defp commit_move(runtime, from, to, event) do
+    trace_entry = %{kind: :step, from: from, to: to}
+
+    trace_entry =
+      if event in [:next, :back, "next", "back"],
+        do: Map.put(trace_entry, :direction, event),
+        else: Map.put(trace_entry, :event, event)
+
+    runtime
+    |> Map.put(:current_state, to)
+    |> Map.update(:history, [], fn hist ->
+      hist ++ [%{event: event, from: from, to: to, at: DateTime.utc_now()}]
+    end)
+    |> Map.update(:trace, [], fn trace ->
+      trace ++ [trace_entry]
+    end)
+  end
+
+  # Optional transition policy hook — see moduledoc.
+  defp apply_transition_policy(spec, runtime, from, to, event) do
+    case Map.get(spec, :transition_policy) do
+      nil ->
+        :allow
+
+      module when is_atom(module) ->
+        if function_exported?(module, :allow_transition?, 5) do
+          try do
+            module.allow_transition?(spec, runtime, from, to, event)
+          rescue
+            _ -> :allow
+          end
+        else
+          :allow
+        end
+
+      _ ->
+        :allow
     end
   end
 

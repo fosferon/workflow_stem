@@ -122,13 +122,16 @@ defmodule WorkflowStem.StepwiseActionTest do
 
       result = StepwiseAction.call(event, %{})
       assert result.status == :ok
-      assert result.runtime.context["agent_response"] != nil
+      assert result.runtime.context["conversation_response"] != nil
     end
 
     test "passes through when no conversation handler configured" do
-      # Temporarily remove handler
-      original = Application.get_env(:workflow_stem, :conversation_handler)
+      # Temporarily remove handler from both config slots (workflow_stem
+      # bridges its config to mobus_stepwise at startup).
+      original_ws = Application.get_env(:workflow_stem, :conversation_handler)
+      original_ms = Application.get_env(:mobus_stepwise, :conversation_handler)
       Application.put_env(:workflow_stem, :conversation_handler, nil)
+      Application.put_env(:mobus_stepwise, :conversation_handler, nil)
 
       event = %{
         spec: %{
@@ -147,7 +150,8 @@ defmodule WorkflowStem.StepwiseActionTest do
       result = StepwiseAction.call(event, %{})
       assert result == event
 
-      Application.put_env(:workflow_stem, :conversation_handler, original)
+      Application.put_env(:workflow_stem, :conversation_handler, original_ws)
+      if original_ms, do: Application.put_env(:mobus_stepwise, :conversation_handler, original_ms)
     end
   end
 

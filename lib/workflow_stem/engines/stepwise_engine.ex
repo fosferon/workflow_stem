@@ -1,296 +1,132 @@
 defmodule WorkflowStem.Engines.StepwiseEngine do
   @moduledoc """
-  ALF-backed engine for `:stepwise` workflows.
+  Shim over `Mobus.Stepwise.Engine` for `:stepwise` workflows.
 
-  Stepwise workflows are intended for wizards/import pipelines:
-  - linear(ish) progression
-  - resumable via checkpoints
-  - lighter semantics than full FSM (events are typically `:next` / `:back`)
+  Since workflow_stem v0.2.0, this module delegates to the foundation
+  engine in `mobus_stepwise`. Consumers gain transitively:
+
+    * telemetry span wrapping on all lifecycle phases
+    * `{:wait, ...}` short-circuit in advance / entry-action stages
+    * transition-policy hooks
+    * projection-enricher hooks
+    * `meta` passthrough to capability input
+    * init-error propagation (`{:error, {:initial_entry_action_failed, ...}}`)
+
+  ## Pipeline indirection
+
+  The engine reads `pipeline_mod` from `runtime_context` (set by
+  `WorkflowStem.Registry` for per-agent compiled pipelines). When no
+  pipeline is injected, defaults to `WorkflowStem.Pipelines.Stepwise`,
+  not the foundation's static pipeline, because workflow_stem components
+  carry additional action types (e.g. `:conversation`).
+
+  ## Adapter configuration bridging
+
+  On application start, workflow_stem copies its own adapter config keys
+  (`:workflow_stem, :capability_runner_adapter` and
+  `:workflow_stem, :capability_runner_strict`) into mobus_stepwise's
+  application env so the foundation engine picks them up transparently.
   """
 
   @behaviour WorkflowStem.EngineBehaviour
 
-  alias WorkflowStem.IR
-  alias WorkflowStem.Pipelines.Stepwise, as: StepwisePipeline
-  alias WorkflowStem.Components.StepwiseProjection
+  alias Mobus.Stepwise.Engine, as: Foundation
   alias WorkflowStem.Projection
-  require Logger
+  alias WorkflowStem.Pipelines.Stepwise, as: DefaultPipeline
 
-  @type runtime :: %{
-          required(:execution_id) => String.t(),
-          required(:tenant_id) => String.t(),
-          required(:spec) => map(),
-          required(:current_state) => atom() | String.t(),
-          optional(:context) => map(),
-          optional(:history) => list(),
-          optional(:trace) => list(),
-          optional(:blocked_reasons) => map(),
-          optional(:breakpoint_hits) => list(),
-          optional(:errors) => [map()],
-          optional(:projection) => Projection.t()
-        }
+  # ── Inject workflow_stem default pipeline ──────────────────────────
 
-  @impl true
-  def init(spec, runtime_context) when is_map(spec) and is_map(runtime_context) do
-    pipeline_mod = resolve_pipeline_mod(runtime_context)
-
-    with {:ok, tenant_id} <- fetch_tenant_id(runtime_context),
-         {:ok, execution_id} <- fetch_execution_id(runtime_context),
-         :ok <- ensure_pipeline(pipeline_mod, runtime_context),
-         ir <- IR.normalize(spec),
-         {:ok, initial_state} <- fetch_initial_state(ir) do
-      runtime = %{
-        execution_id: execution_id,
-        tenant_id: tenant_id,
-        pipeline_mod: pipeline_mod,
-        spec: ir,
-        current_state: initial_state,
-        context: Map.get(runtime_context, :initial_context, %{}) || %{},
-        artifacts: %{},
-        history: [],
-        trace: [],
-        blocked_reasons: %{},
-        breakpoint_hits: []
-      }
-
-      # Fire entry action for the initial state so capabilities with :enter trigger run
-      runtime = run_initial_entry_action(runtime)
-
-      {:ok, runtime |> compute_projection()}
+  # The foundation engine resolves its own default
+  # (Mobus.Stepwise.Pipeline.Stepwise) when no :pipeline_mod key is
+  # present. We override that here so consumers that don't inject a
+  # pipeline get the workflow_stem variant with conversation support.
+  defp inject_default_pipeline(runtime_context) do
+    unless Map.has_key?(runtime_context, :pipeline_mod) or
+             Map.has_key?(runtime_context, "pipeline_mod") do
+      Map.put(runtime_context, :pipeline_mod, DefaultPipeline)
+    else
+      runtime_context
     end
   end
 
-  @impl true
-  def handle_event(runtime, event, payload)
-      when is_map(runtime) and (is_atom(event) or is_binary(event)) and is_map(payload) do
-    pipeline_mod = pipeline_mod_of(runtime)
-    :ok = ensure_pipeline(pipeline_mod, %{})
+  # ── Projection conversion ──────────────────────────────────────────
 
-    input = %{
-      spec: runtime.spec,
-      runtime: Map.delete(runtime, :projection),
-      event: event,
-      payload: payload,
-      status: :ok
+  defp convert_projection(%Mobus.Stepwise.Projection{} = src) do
+    %Projection{
+      execution_id: src.execution_id,
+      profile: src.profile,
+      current_state: src.current_state,
+      available_events: src.available_events,
+      blocked_reasons: src.blocked_reasons,
+      breakpoint_hits: src.breakpoint_hits,
+      subscriptions: src.subscriptions,
+      artifacts: src.artifacts,
+      ui: src.ui,
+      errors: src.errors,
+      trace: src.trace,
+      extensions: src.extensions
     }
-
-    case call_pipeline(pipeline_mod, input) do
-      {:ok, %{status: :error, error: reason, runtime: updated}} ->
-        {:error, reason, compute_projection(updated)}
-
-      {:ok, %{runtime: updated, wait: wait_cfg}} ->
-        {:wait, compute_projection(updated), wait_cfg}
-
-      {:ok, %{runtime: updated}} ->
-        {:ok, compute_projection(updated)}
-
-      {:error, reason} ->
-        {:error, reason, compute_projection(runtime)}
-    end
   end
+
+  defp convert_projection(other), do: other
+
+  defp convert_runtime(%{projection: %Mobus.Stepwise.Projection{} = proj} = rt) do
+    %{rt | projection: convert_projection(proj)}
+  end
+
+  defp convert_runtime(rt), do: rt
+
+  # ── Delegation ─────────────────────────────────────────────────────
 
   @impl true
-  def get_state(%{projection: %Projection{} = projection}), do: projection
+  def init(spec, runtime_context) do
+    runtime_context = inject_default_pipeline(runtime_context)
 
-  def get_state(runtime) when is_map(runtime) do
-    runtime = compute_projection(runtime)
-
-    case runtime do
-      %{projection: %Projection{} = projection} -> projection
-      _ -> runtime |> build_projection() |> Map.fetch!(:projection)
-    end
-  end
-
-  @impl true
-  def checkpoint(runtime) when is_map(runtime) do
-    runtime
-    |> Map.drop([:projection, :pipeline_mod])
-    |> Map.take([
-      :execution_id,
-      :tenant_id,
-      :spec,
-      :current_state,
-      :context,
-      :artifacts,
-      :history,
-      :trace,
-      :blocked_reasons,
-      :breakpoint_hits
-    ])
-  end
-
-  @impl true
-  def restore(spec, checkpoint, runtime_context)
-      when is_map(spec) and is_map(checkpoint) and is_map(runtime_context) do
-    pipeline_mod = resolve_pipeline_mod(runtime_context)
-
-    with {:ok, tenant_id} <- fetch_tenant_id(runtime_context),
-         :ok <- ensure_pipeline(pipeline_mod, runtime_context) do
-      ir = IR.normalize(spec)
-
-      execution_id =
-        Map.get(checkpoint, :execution_id) ||
-          Map.get(checkpoint, "execution_id") ||
-          Map.get(runtime_context, :execution_id) ||
-          Map.get(runtime_context, "execution_id") ||
-          "stem-" <> Integer.to_string(System.unique_integer([:positive, :monotonic]))
-
-      runtime = %{
-        execution_id: execution_id,
-        tenant_id: tenant_id,
-        pipeline_mod: pipeline_mod,
-        spec: ir,
-        current_state: Map.get(checkpoint, :current_state) || Map.get(checkpoint, "current_state"),
-        context: Map.get(checkpoint, :context) || Map.get(checkpoint, "context") || %{},
-        artifacts: Map.get(checkpoint, :artifacts) || Map.get(checkpoint, "artifacts") || %{},
-        history: Map.get(checkpoint, :history) || Map.get(checkpoint, "history") || [],
-        trace: Map.get(checkpoint, :trace) || Map.get(checkpoint, "trace") || [],
-        blocked_reasons: Map.get(checkpoint, :blocked_reasons) || Map.get(checkpoint, "blocked_reasons") || %{},
-        breakpoint_hits: Map.get(checkpoint, :breakpoint_hits) || Map.get(checkpoint, "breakpoint_hits") || []
-      }
-
-      {:ok, compute_projection(runtime)}
-    end
-  end
-
-  # ── Pipeline-module indirection ────────────────────────────────────
-  # Read the pipeline module from the runtime_context (set by
-  # WorkflowStem.Registry / Atrapos.Workflows.WorkflowHost). Falls back
-  # to the shared static pipeline for callers that don't inject one.
-
-  defp resolve_pipeline_mod(runtime_context) do
-    Map.get(runtime_context, :pipeline_mod) ||
-      Map.get(runtime_context, "pipeline_mod") ||
-      StepwisePipeline
-  end
-
-  defp pipeline_mod_of(runtime) do
-    Map.get(runtime, :pipeline_mod) ||
-      Map.get(runtime, "pipeline_mod") ||
-      StepwisePipeline
-  end
-
-  defp ensure_pipeline(pipeline_mod, runtime_context) do
-    opts =
-      case Map.get(runtime_context, :sync) do
-        true -> [sync: true]
-        _ -> []
-      end
-
-    case pipeline_mod.ensure_started(opts) do
-      :ok -> :ok
+    case Foundation.init(spec, runtime_context) do
+      {:ok, runtime} -> {:ok, convert_runtime(runtime)}
+      {:error, {:initial_entry_action_failed, reason, runtime}} ->
+        {:error, {:initial_entry_action_failed, reason, convert_runtime(runtime)}}
       {:error, _} = err -> err
     end
   end
 
-  defp call_pipeline(pipeline_mod, input) do
-    case pipeline_mod.call(input) do
-      %ALF.IP{event: out} -> {:ok, out}
-      %ALF.ErrorIP{error: error} -> {:error, error}
-      %{} = out -> {:ok, out}
-      other -> {:error, {:unexpected_pipeline_result, other}}
+  @impl true
+  def handle_event(runtime, event, payload) do
+    # Strip the WorkflowStem projection so the foundation engine sees a clean
+    # runtime. We'll convert back on the way out.
+    runtime = strip_projection(runtime)
+
+    case Foundation.handle_event(runtime, event, payload) do
+      {:ok, runtime} -> {:ok, convert_runtime(runtime)}
+      {:wait, runtime, cfg} -> {:wait, convert_runtime(runtime), cfg}
+      {:error, reason, runtime} -> {:error, reason, convert_runtime(runtime)}
     end
   end
 
-  defp compute_projection(runtime) do
-    pipeline_mod = pipeline_mod_of(runtime)
+  @impl true
+  def get_state(runtime) do
+    runtime = strip_projection(runtime)
+    Foundation.get_state(runtime) |> convert_projection()
+  end
 
-    input = %{
-      spec: runtime.spec,
-      runtime: Map.delete(runtime, :projection),
-      event: "__projection__",
-      payload: %{},
-      status: :ok,
-      skip_transition: true
-    }
+  @impl true
+  defdelegate checkpoint(runtime), to: Foundation
 
-    case call_pipeline(pipeline_mod, input) do
-      {:ok, %{runtime: updated}} ->
-        if match?(%Projection{}, Map.get(updated, :projection)) do
-          updated
-        else
-          error = projection_error(:missing_projection, updated, input.event)
-          log_projection_error(error)
-          build_projection(updated, [error])
-        end
+  @impl true
+  def restore(spec, checkpoint, runtime_context) do
+    runtime_context = inject_default_pipeline(runtime_context)
 
-      {:error, reason} ->
-        error = projection_error(reason, runtime, input.event)
-        log_projection_error(error)
-        build_projection(runtime, [error])
+    case Foundation.restore(spec, checkpoint, runtime_context) do
+      {:ok, runtime} -> {:ok, convert_runtime(runtime)}
+      {:error, _} = err -> err
     end
   end
 
-  defp build_projection(runtime, errors \\ []) do
-    runtime = append_errors(runtime, errors)
-    event = %{spec: runtime.spec, runtime: Map.delete(runtime, :projection)}
-
-    case StepwiseProjection.call(event, %{}) do
-      %{runtime: updated} -> updated
-      _ -> runtime
-    end
+  # Remove WorkflowStem.Projection from runtime before passing to foundation,
+  # since the foundation expects to build its own Mobus.Stepwise.Projection.
+  defp strip_projection(%{projection: %Projection{}} = rt) do
+    Map.delete(rt, :projection)
   end
 
-  defp append_errors(runtime, errors) when is_list(errors) and errors != [] do
-    Map.update(runtime, :errors, errors, fn existing -> existing ++ errors end)
-  end
-
-  defp append_errors(runtime, _errors), do: runtime
-
-  defp projection_error(reason, runtime, event) do
-    %{
-      type: :pipeline_error,
-      reason: reason,
-      engine: __MODULE__,
-      event: event,
-      execution_id: Map.get(runtime, :execution_id),
-      timestamp: DateTime.utc_now()
-    }
-  end
-
-  defp log_projection_error(error) do
-    Logger.warning("Workflow stem projection pipeline failed: #{inspect(error)}")
-  end
-
-  defp fetch_tenant_id(runtime_context) do
-    case Map.get(runtime_context, :tenant_id) || Map.get(runtime_context, "tenant_id") do
-      nil -> {:error, :missing_tenant_id}
-      tid -> {:ok, tid}
-    end
-  end
-
-  defp fetch_execution_id(runtime_context) do
-    case Map.get(runtime_context, :execution_id) || Map.get(runtime_context, "execution_id") do
-      nil -> {:ok, "stem-" <> Integer.to_string(System.unique_integer([:positive, :monotonic]))}
-      id -> {:ok, id}
-    end
-  end
-
-  defp fetch_initial_state(spec) do
-    case Map.get(spec, :initial_state) do
-      nil -> {:error, :missing_initial_state}
-      state -> {:ok, state}
-    end
-  end
-
-  alias WorkflowStem.Components.StepwiseAction
-
-  defp run_initial_entry_action(runtime) do
-    event = %{
-      spec: runtime.spec,
-      runtime: Map.delete(runtime, :projection),
-      event: :__enter__,
-      payload: %{},
-      status: :ok,
-      state_changed?: true
-    }
-
-    case StepwiseAction.run_entry_action(event) do
-      %{runtime: updated_runtime} ->
-        Map.merge(runtime, Map.take(updated_runtime, [:context, :artifacts, :trace]))
-
-      _ ->
-        runtime
-    end
-  end
+  defp strip_projection(rt), do: rt
 end

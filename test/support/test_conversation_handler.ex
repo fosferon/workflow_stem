@@ -2,14 +2,15 @@ defmodule WorkflowStem.TestConversationHandler do
   @moduledoc """
   Test double for WorkflowStem.Adapters.ConversationHandler.
 
-  Records calls and returns a predictable response. Used in engine tests
-  to verify conversation action delegation without a real LLM.
+  Demonstrates the generalized contract: the handler constructs its own
+  domain vocabulary. No consumer-specific field names are hardcoded in
+  the framework.
   """
 
   @behaviour WorkflowStem.Adapters.ConversationHandler
 
   @impl true
-  def handle_conversation(event, runtime, trigger, _payload, action_config) do
+  def handle_conversation(event, runtime, trigger, payload, action_config) do
     context = Map.get(runtime, :context, %{})
 
     response =
@@ -25,7 +26,7 @@ defmodule WorkflowStem.TestConversationHandler do
           "Generic response"
       end
 
-    # Check for completion signal in action_config
+    # Read completion signals from the action config (consumer-defined)
     completion_signal =
       Map.get(action_config, :completion_signal) ||
         Map.get(action_config, "completion_signal")
@@ -34,21 +35,26 @@ defmodule WorkflowStem.TestConversationHandler do
       Map.get(action_config, :completion_event) ||
         Map.get(action_config, "completion_event")
 
-    stage_complete = completion_signal != nil
-    next_event = if stage_complete, do: completion_event, else: nil
-
+    # Build a generic history entry (consumer vocabulary)
     history =
-      (Map.get(context, "chat_history", []) || []) ++
+      (Map.get(context, "conversation_history", []) || []) ++
         [%{"role" => "assistant", "content" => response}]
 
     updated_context =
       context
-      |> Map.put("agent_response", response)
-      |> Map.put("chat_history", history)
-      |> Map.put("thinking", false)
-      |> then(fn ctx ->
-        if next_event, do: Map.put(ctx, "next_event", next_event), else: ctx
-      end)
+      |> Map.put("conversation_response", response)
+      |> Map.put("conversation_history", history)
+
+    updated_context =
+      if completion_signal do
+        updated_context
+        |> Map.put("conversation_complete", true)
+        |> then(fn ctx ->
+          if completion_event, do: Map.put(ctx, "next_event", completion_event), else: ctx
+        end)
+      else
+        updated_context
+      end
 
     updated_runtime = Map.put(runtime, :context, updated_context)
     %{event | runtime: updated_runtime}

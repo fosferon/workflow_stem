@@ -20,7 +20,8 @@ defmodule WorkflowStem.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger],
+      mod: {WorkflowStem.Application, []}
     ]
   end
 
@@ -31,6 +32,7 @@ defmodule WorkflowStem.MixProject do
     [
       {:alf, "~> 0.12"},
       {:jason, "~> 1.4"},
+      {:mobus_stepwise, path: "../mobus_stepwise"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
   end
