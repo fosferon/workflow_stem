@@ -11,6 +11,6 @@ defmodule WorkflowStem.Adapters.CapabilityRunner do
   @type capability_handle :: String.t() | atom()
 
   @callback execute(Types.tenant_id(), capability_handle(), map()) ::
-              {:ok, term()} | {:error, term()}
+              {:ok, term()} | {:wait, term()} | {:error, term()} | {:error, term(), map()}
 end
 

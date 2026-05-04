@@ -105,6 +105,44 @@ defmodule WorkflowStem.StepwiseEngineTest do
       # The test conversation handler should have set a conversation_response
       assert get_in(runtime, [:context, "conversation_response"]) != nil
     end
+
+    test "propagates {:error, {:initial_entry_action_failed, reason, runtime}} from shim" do
+      # Configure a failing adapter on the mobus_stepwise config that the shim bridges to
+      Application.put_env(
+        :mobus_stepwise,
+        :capability_runner_adapter,
+        WorkflowStem.StepwiseEngineTest.BoomAdapter
+      )
+
+      spec = %{
+        profile: :stepwise,
+        initial_state: :step_one,
+        steps: [:step_one, :step_two],
+        states: %{
+          step_one: %{
+            step_number: 1,
+            ui: %{key: :step_one},
+            action: %{type: :capability, handle: "test.boom", triggers: [:enter]}
+          },
+          step_two: %{step_number: 2, ui: %{key: :step_two}}
+        }
+      }
+
+      assert {:error, {:initial_entry_action_failed, :boom, runtime}} =
+               StepwiseEngine.init(spec, %{tenant_id: "t1", execution_id: "exec-boom", sync: true})
+
+      assert is_map(runtime)
+      assert runtime.current_state == :step_one
+
+      # The runtime should carry a WorkflowStem.Projection (not Mobus)
+      assert %WorkflowStem.Projection{} = runtime.projection
+    after
+      Application.delete_env(:mobus_stepwise, :capability_runner_adapter)
+    end
+  end
+
+  defmodule BoomAdapter do
+    def execute(_tenant_id, _handle, _input), do: {:error, :boom}
   end
 
   describe "handle_event/3 — stepwise navigation" do
@@ -235,6 +273,32 @@ defmodule WorkflowStem.StepwiseEngineTest do
 
       cp = StepwiseEngine.checkpoint(runtime)
       refute Map.has_key?(cp, :projection)
+    end
+
+    test "restored runtime is functional for handle_event through shim" do
+      context = %{tenant_id: "t1", execution_id: "exec-cp3", sync: true}
+      {:ok, runtime} = StepwiseEngine.init(@basic_spec, context)
+      {:ok, runtime} = StepwiseEngine.handle_event(runtime, :next, %{"data" => "pre-checkpoint"})
+
+      cp = StepwiseEngine.checkpoint(runtime)
+      assert cp.current_state == :problem_solving
+
+      # Advance to review
+      {:ok, advanced} = StepwiseEngine.handle_event(runtime, :next, %{})
+      assert advanced.current_state == :review
+
+      # Restore and verify the restored runtime can handle events through the shim
+      assert {:ok, restored} = StepwiseEngine.restore(@basic_spec, cp, context)
+      assert restored.current_state == :problem_solving
+      assert Map.get(restored, :context)["data"] == "pre-checkpoint"
+
+      # handle_event on the restored runtime
+      {:ok, after_restore} = StepwiseEngine.handle_event(restored, :next, %{"data" => "post-restore"})
+      assert after_restore.current_state == :review
+
+      # Verify projection type is correct (WorkflowStem.Projection, not Mobus.Stepwise.Projection)
+      projection = StepwiseEngine.get_state(after_restore)
+      assert %WorkflowStem.Projection{} = projection
     end
   end
 

@@ -29,7 +29,6 @@ defmodule WorkflowStem.ExecutionStore do
         case GenServer.start(__MODULE__, %{}, name: @name) do
           {:ok, _pid} -> :ok
           {:error, {:already_started, _pid}} -> :ok
-          {:error, {:already_started, _pid, _info}} -> :ok
           _ -> :ok
         end
 

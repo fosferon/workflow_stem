@@ -22,7 +22,6 @@ defmodule WorkflowStem.Pipelines.Flow do
     case start(opts) do
       :ok -> :ok
       {:error, {:already_started, _pid}} -> :ok
-      {:error, {:already_started, _pid, _info}} -> :ok
       other -> other
     end
   end
