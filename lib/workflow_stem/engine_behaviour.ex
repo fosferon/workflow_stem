@@ -10,7 +10,9 @@ defmodule WorkflowStem.EngineBehaviour do
   alias WorkflowStem.Projection
 
   @callback init(Types.spec(), Types.runtime_context()) ::
-              {:ok, Types.runtime()} | {:error, Types.reason()}
+              {:ok, Types.runtime()}
+              | {:error, Types.reason()}
+              | {:error, {:initial_entry_action_failed, Types.reason(), Types.runtime()}}
 
   @callback handle_event(Types.runtime(), Types.event(), Types.payload()) ::
               {:ok, Types.runtime()}
