@@ -1,5 +1,21 @@
 defmodule WorkflowStem.Capabilities do
-  @moduledoc false
+  @moduledoc """
+  Capability runner adapter for workflow_stem consumers.
+
+  ## Relationship to the foundation
+
+  The stepwise engine path delegates to `Mobus.Stepwise.Engine`, which uses
+  `Mobus.Stepwise.Capabilities` internally. That module reads from
+  `:mobus_stepwise` config — bridged at startup by `WorkflowStem.Application`.
+
+  This module (`WorkflowStem.Capabilities`) remains for the **FSM and Flow
+  engine paths**, which have their own capability execution flows. It reads
+  from `:workflow_stem` config directly (not bridged).
+
+  Consumers that only use the stepwise engine can ignore this module;
+  configure `:workflow_stem, :capability_runner_adapter` and the bridge
+  handles the rest. FSM/Flow consumers call `execute/3` here directly.
+  """
 
   @spec adapter() :: module() | nil
   def adapter do
