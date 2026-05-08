@@ -32,7 +32,7 @@ defmodule WorkflowStem.MixProject do
     [
       {:alf, "~> 0.12"},
       {:jason, "~> 1.4"},
-      {:mobus_stepwise, github: "fosferon/mobus_stepwise", ref: "904f119951c306cbe1687933d6201c9e8bfc2f38"},
+      {:mobus_stepwise, "~> 0.2.0"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
   end
