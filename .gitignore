@@ -24,3 +24,4 @@ Thumbs.db
 
 # PI internal
 .pi/
+workflow_stem-*.tar

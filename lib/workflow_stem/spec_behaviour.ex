@@ -11,7 +11,7 @@ defmodule WorkflowStem.SpecBehaviour do
 
     * `:id`             — workflow handle (same as `workflow_handle/0`)
     * `:profile`        — `:stepwise | :fsm | :flow`
-    * `:persona`        — optional persona slug loaded by hosts (e.g. Atrapos)
+    * `:persona`        — optional persona slug loaded by hosts
     * `:initial_state`  — atom naming the starting state
     * `:states`         — `%{state_name => state_map}`
     * `:transitions`    — `%{event => %{to: state_name}}`

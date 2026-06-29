@@ -1,10 +1,11 @@
 # WorkflowStem
 
-Shared workflow runtime for the [Mobus](https://github.com/fosferon) platform — stepwise, FSM, and flow engines backed by [ALF](https://github.com/antonmi/ALF) pipelines.
+Shared workflow runtime — stepwise, FSM, and flow engines backed by [ALF](https://github.com/antonmi/ALF) pipelines.
 
 WorkflowStem provides three workflow profiles, each with a dedicated ALF pipeline and engine:
 
 - **Stepwise** — linear wizard/import flows with back/forward navigation. Delegates to [`mobus_stepwise`](https://hex.pm/packages/mobus_stepwise) for the core engine.
+- **Runner** — a host-parameterized execution runner that owns the FSM walk, wait/resume loop, control checks, checkpoint hooks, and canonical event emission. Hosts plug in persistence, publication, and control state through adapter behaviours.
 - **FSM** — state-machine workflows with guard/transition/breakpoint semantics.
 - **Flow** — pure data pipelines that run a sequence of transformations end-to-end.
 
@@ -17,7 +18,7 @@ Add `workflow_stem` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:workflow_stem, "~> 0.2.0"}
+    {:workflow_stem, "~> 0.3.0"}
   ]
 end
 ```
@@ -70,6 +71,34 @@ runtime = %{
 
 {:ok, projection} = StepwiseEngine.init(runtime)
 {:ok, projection} = StepwiseEngine.advance(runtime, %{input: "Leonidas"})
+```
+
+## Runner
+
+`WorkflowStem.Runner` is a host-parameterized execution runner. It owns the
+FSM walk, wait/resume loop, control checks, checkpoint hooks, and canonical
+event emission. Hosts provide persistence, live publication, and control
+state through adapter behaviours (`EventSink`, `ControlStore`,
+`CheckpointStore`).
+
+```elixir
+alias WorkflowStem.Runner
+
+{:ok, execution_id} =
+  Runner.start(spec, inputs,
+    tenant_id: "tenant_1",
+    execution_id: "exec_123",
+    event_sink: MyApp.EventSink,
+    control_store: MyApp.ControlStore,
+    checkpoint_store: MyApp.CheckpointStore
+  )
+```
+
+Events are appended durably first, then published for live subscribers. Late
+subscribers replay through the same `EventSink`:
+
+```elixir
+{:ok, events} = WorkflowStem.Runner.replay(MyApp.EventSink, "tenant_1", "exec_123")
 ```
 
 ## Architecture

@@ -112,8 +112,8 @@ defmodule WorkflowStem.Registry do
   @doc """
   Variant that accepts the spec map directly, bypassing module discovery.
 
-  Useful for callers that already have the spec in hand (e.g. Atrapos
-  loading a persona YAML) and for tests where the spec module isn't
+  Useful for callers that already have the spec in hand (e.g. loading
+  a persona from YAML) and for tests where the spec module isn't
   registered in `:application.get_key/2`.
   """
   @spec ensure_instance(term(), String.t(), map()) :: {:ok, module()} | {:error, term()}

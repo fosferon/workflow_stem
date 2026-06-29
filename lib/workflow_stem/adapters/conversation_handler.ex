@@ -2,9 +2,9 @@ defmodule WorkflowStem.Adapters.ConversationHandler do
   @moduledoc """
   Behaviour for conversation action handling.
 
-  Host applications implement this to connect STEM's `:conversation`
-  action type to their conversation system (e.g., ConvEngine.Turn for Atrapos,
-  or a PubSub pipeline for MOBuS).
+  Host applications implement this to connect the workflow runtime's
+  `:conversation` action type to their conversation system (e.g. a
+  conversational turn struct, or a PubSub pipeline).
 
   ## Callback arguments
 

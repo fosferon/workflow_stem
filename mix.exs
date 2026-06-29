@@ -1,7 +1,7 @@
 defmodule WorkflowStem.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/fosferon/workflow_stem"
 
   def project do
@@ -14,6 +14,7 @@ defmodule WorkflowStem.MixProject do
       description: "Shared workflow runtime — stepwise, FSM, and flow engines with ALF pipelines",
       package: package(),
       source_url: @source_url,
+      docs: docs(),
       elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
@@ -44,6 +45,34 @@ defmodule WorkflowStem.MixProject do
       links: %{"GitHub" => @source_url},
       maintainers: ["Leonidas"],
       files: ~w(lib .formatter.exs mix.exs README.md LICENSE)
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      source_ref: "v{@version}",
+      source_url_pattern: @source_url <> "/blob/v{@version}/{path}#L{line}",
+      extras: ["README.md"],
+      groups_for_modules: [
+        Adapters: [
+          WorkflowStem.Adapters.CapabilityRunner,
+          WorkflowStem.Adapters.CapabilityInvoker,
+          WorkflowStem.Adapters.CheckpointStore,
+          WorkflowStem.Adapters.ConversationHandler,
+          WorkflowStem.Adapters.ControlStore,
+          WorkflowStem.Adapters.EventSink,
+          WorkflowStem.Adapters.NotificationAdapter,
+          WorkflowStem.Adapters.PersistenceAdapter,
+          WorkflowStem.Adapters.ProcessController
+        ],
+        Engines: ~r"^WorkflowStem.Engines$",
+        Pipelines: ~r"^WorkflowStem.Pipelines$",
+        Runner: [
+          WorkflowStem.Runner,
+          WorkflowStem.EventLog
+        ]
+      ]
     ]
   end
 end
