@@ -16,6 +16,9 @@
 .DS_Store
 Thumbs.db
 
+# Generated docs
+/doc/
+
 # Logs
 .logs/
 
