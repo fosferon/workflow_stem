@@ -1,7 +1,7 @@
 defmodule WorkflowStem.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.3.1"
   @source_url "https://github.com/fosferon/workflow_stem"
 
   def project do
@@ -44,7 +44,7 @@ defmodule WorkflowStem.MixProject do
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
       maintainers: ["Leonidas"],
-      files: ~w(lib .formatter.exs mix.exs README.md LICENSE)
+      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 

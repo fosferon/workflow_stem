@@ -11,5 +11,7 @@ defmodule WorkflowStem.Components.StepwiseAction do
   """
 
   defdelegate call(event, opts), to: Mobus.Stepwise.Components.StepwiseAction
+
+  @doc false
   defdelegate run_entry_action(event), to: Mobus.Stepwise.Components.StepwiseAction
 end
