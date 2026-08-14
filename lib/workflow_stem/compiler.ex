@@ -273,8 +273,7 @@ defmodule WorkflowStem.Compiler do
   defp build({:plug_with, module, body}, state, spec) when is_atom(module) and is_list(body) do
     compiled_body = Enum.map(body, &build(&1, state, spec))
 
-    {:plug_with, module,
-     Map.merge(base_meta(state, []), %{body: compiled_body})}
+    {:plug_with, module, Map.merge(base_meta(state, []), %{body: compiled_body})}
   end
 
   defp build({:tbd, name}, state, _spec) do
@@ -319,15 +318,36 @@ defmodule WorkflowStem.Compiler do
   end
 
   defp check({:goto, name, opts}, spec) when is_list(opts) do
-    require_routing(spec, Keyword.get(opts, :if, name))
+    with :ok <- validate_opts(opts) do
+      require_routing(spec, Keyword.get(opts, :if, name))
+    end
   end
 
-  defp check({:plug_with, _module, body}, spec) when is_list(body) do
+  defp check({:plug_with, module, body}, spec) when is_atom(module) and is_list(body) do
     walk_primitives(body, spec)
   end
 
-  defp check(tuple, _spec) when is_tuple(tuple), do: :ok
+  defp check({:stage, _target}, _spec), do: :ok
+  defp check({:stage, _target, opts}, _spec), do: validate_opts(opts)
+  defp check({:composer, module}, _spec) when is_atom(module), do: :ok
+  defp check({:composer, module, opts}, _spec) when is_atom(module), do: validate_opts(opts)
+  defp check({:goto_point, _name}, _spec), do: :ok
+  defp check({:goto_point, _name, opts}, _spec), do: validate_opts(opts)
+  defp check({:done, _name}, _spec), do: :ok
+  defp check({:done, _name, opts}, _spec), do: validate_opts(opts)
+  defp check({:dead_end, _name}, _spec), do: :ok
+  defp check({:dead_end, _name, opts}, _spec), do: validate_opts(opts)
+  defp check({:from, module}, _spec) when is_atom(module), do: :ok
+  defp check({:from, module, opts}, _spec) when is_atom(module), do: validate_opts(opts)
+  defp check({:tbd, _name}, _spec), do: :ok
+  defp check({:tbd, _name, opts}, _spec), do: validate_opts(opts)
   defp check(other, _spec), do: {:error, {:bad_primitive, other}}
+
+  defp validate_opts(opts) when is_list(opts) do
+    if Keyword.keyword?(opts), do: :ok, else: {:error, {:bad_primitive_options, opts}}
+  end
+
+  defp validate_opts(opts), do: {:error, {:bad_primitive_options, opts}}
 
   defp require_routing(spec, name) do
     case IR.routing_for(spec, name) do

@@ -297,5 +297,13 @@ defmodule WorkflowStem.CompilerTest do
       s = spec(states: %{a: %{route: {:switch, :r, %{x: [], y: []}}}}, routing: %{})
       assert {:error, {:missing_routing, :r}} = Compiler.validate(s)
     end
+
+    test "rejects unknown tuple primitives and malformed options before AST emission" do
+      unknown = spec(states: %{a: %{route: {:not_an_alf_primitive, :x}}})
+      assert {:error, {:bad_primitive, {:not_an_alf_primitive, :x}}} = Compiler.validate(unknown)
+
+      malformed = spec(states: %{a: %{route: {:stage, :x, %{count: 1}}}})
+      assert {:error, {:bad_primitive_options, %{count: 1}}} = Compiler.validate(malformed)
+    end
   end
 end
