@@ -2,8 +2,9 @@ defmodule WorkflowStem.Loader do
   @moduledoc """
   Loads and compiles workflow specs (maps) into an internal IR (data).
 
-  This does not generate Elixir modules. For UI-authored workflows loaded from disk,
-  the stem interprets the IR using static profile pipelines.
+  This module produces data-only IR and does not itself generate Elixir modules.
+  The registry executes route-free IR through static profile pipelines and may
+  compile routed IR into a cached per-workflow ALF module.
   """
 
   alias WorkflowStem.Cache

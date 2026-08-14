@@ -51,8 +51,8 @@ defmodule WorkflowStem.MixProject do
   defp docs do
     [
       main: "readme",
-      source_ref: "v{@version}",
-      source_url_pattern: @source_url <> "/blob/v{@version}/{path}#L{line}",
+      source_ref: "v#{@version}",
+      source_url_pattern: "#{@source_url}/blob/v#{@version}/{path}#L{line}",
       extras: ["README.md"],
       groups_for_modules: [
         Adapters: [
@@ -66,8 +66,8 @@ defmodule WorkflowStem.MixProject do
           WorkflowStem.Adapters.PersistenceAdapter,
           WorkflowStem.Adapters.ProcessController
         ],
-        Engines: ~r"^WorkflowStem.Engines$",
-        Pipelines: ~r"^WorkflowStem.Pipelines$",
+        Engines: ~r"^WorkflowStem.Engines",
+        Pipelines: ~r"^WorkflowStem.Pipelines",
         Runner: [
           WorkflowStem.Runner,
           WorkflowStem.EventLog

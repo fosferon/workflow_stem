@@ -58,7 +58,8 @@ spec = %{
 ### 2. Compile to IR
 
 ```elixir
-{:ok, ir} = WorkflowStem.Loader.get_or_compile("tenant_1", "my_workflow", spec)
+artifact = %{artifact_hash: "my-workflow-v1", spec: spec}
+{:ok, ir} = WorkflowStem.Loader.get_or_compile("tenant_1", "my_workflow", artifact)
 ```
 
 ### 3. Run through an engine
