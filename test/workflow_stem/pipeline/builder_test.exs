@@ -183,5 +183,42 @@ defmodule WorkflowStem.Pipeline.BuilderTest do
       mod = unique_module("PlugWithPipeline")
       assert {:ok, ^mod} = Builder.build(mod, descriptors, %{})
     end
+
+    test "compiles nested plug scopes containing a switch" do
+      descriptors = [
+        {:plug_with, SomeMod,
+         %{
+           state: :a,
+           count: 1,
+           opts: [],
+           body: [
+             {:plug_with, NestedMod,
+              %{
+                state: :a,
+                count: 1,
+                opts: [],
+                body: [
+                  {:switch, :triage_route,
+                   %{
+                     state: :a,
+                     count: 1,
+                     opts: [],
+                     resolver: {Routers, :triage_route},
+                     branches: %{
+                       simple: [{:tbd, :simple, %{state: :a, count: 1, opts: []}}],
+                       deep: [{:tbd, :deep, %{state: :a, count: 1, opts: []}}]
+                     }
+                   }}
+                ]
+              }}
+           ]
+         }}
+      ]
+
+      mod = unique_module("NestedPlugWithPipeline")
+
+      assert {:ok, ^mod} =
+               Builder.build(mod, descriptors, %{triage_route: {Routers, :triage_route}})
+    end
   end
 end

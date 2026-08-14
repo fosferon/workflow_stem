@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Runtime pipeline generation now emits recursive `plug_with` bodies, including
+  nested route primitives.
+
+### Changed
+
+- Route validation rejects malformed primitive options and `goto` declarations
+  without a required `to` target before runtime AST emission.
+
 ## v0.3.1 (June 2026) — Public release hygiene
 
 ### Changed

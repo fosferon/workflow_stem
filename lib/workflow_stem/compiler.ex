@@ -147,7 +147,13 @@ defmodule WorkflowStem.Compiler do
   `:switch` branches and `:plug_with` bodies) and checks that each
   `:switch`/`:goto` primitive's routing name resolves.
   """
-  @spec validate(IR.t()) :: :ok | {:error, {:missing_routing, atom()} | {:bad_primitive, term()}}
+  @spec validate(IR.t()) ::
+          :ok
+          | {:error,
+             {:missing_routing, atom()}
+             | {:bad_primitive, term()}
+             | {:bad_primitive_options, term()}
+             | {:missing_required_opt, atom()}}
   def validate(%{} = spec) do
     spec
     |> Map.get(:states, %{})
@@ -318,7 +324,8 @@ defmodule WorkflowStem.Compiler do
   end
 
   defp check({:goto, name, opts}, spec) when is_list(opts) do
-    with :ok <- validate_opts(opts) do
+    with :ok <- validate_opts(opts),
+         :ok <- require_opt(opts, :to) do
       require_routing(spec, Keyword.get(opts, :if, name))
     end
   end
@@ -348,6 +355,10 @@ defmodule WorkflowStem.Compiler do
   end
 
   defp validate_opts(opts), do: {:error, {:bad_primitive_options, opts}}
+
+  defp require_opt(opts, key) do
+    if Keyword.has_key?(opts, key), do: :ok, else: {:error, {:missing_required_opt, key}}
+  end
 
   defp require_routing(spec, name) do
     case IR.routing_for(spec, name) do

@@ -9,7 +9,7 @@ WorkflowStem provides three workflow profiles, each with a dedicated ALF pipelin
 - **FSM** — state-machine workflows with guard/transition/breakpoint semantics.
 - **Flow** — pure data pipelines that run a sequence of transformations end-to-end.
 
-Specs are compiled into an intermediate representation (IR) and executed by static ALF pipelines — no per-workflow module generation at runtime. The compiler supports ALF primitives (`stage`, `switch`, `composer`, `goto`, `goto_point`, `done`, `dead_end`, `from`, `plug_with`) for specs that declare custom routes.
+Specs are compiled into an intermediate representation (IR) and executed by static ALF pipelines — no per-workflow module generation at runtime. The compiler supports ALF primitives (`stage`, `switch`, `composer`, `goto`, `goto_point`, `done`, `dead_end`, `from`, `plug_with`, `tbd`) for specs that declare custom routes.
 
 ## Installation
 

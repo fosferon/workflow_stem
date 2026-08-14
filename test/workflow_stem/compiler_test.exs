@@ -293,6 +293,22 @@ defmodule WorkflowStem.CompilerTest do
       assert {:error, {:missing_routing, :unrouted}} = Compiler.validate(s)
     end
 
+    test "rejects a :goto without its required :to option before AST emission" do
+      s =
+        spec(
+          states: %{a: %{route: {:goto, :jump, if: :routed}}},
+          routing: %{routed: {__MODULE__, :pick}}
+        )
+
+      assert {:error, {:missing_required_opt, :to}} = Compiler.validate(s)
+    end
+
+    test "rejects an invalid primitive nested inside :plug_with" do
+      s = spec(states: %{a: %{route: {:plug_with, Outer, [{:invalid, :nested}]}}})
+
+      assert {:error, {:bad_primitive, {:invalid, :nested}}} = Compiler.validate(s)
+    end
+
     test "rejects a missing routing name at the top level" do
       s = spec(states: %{a: %{route: {:switch, :r, %{x: [], y: []}}}}, routing: %{})
       assert {:error, {:missing_routing, :r}} = Compiler.validate(s)
