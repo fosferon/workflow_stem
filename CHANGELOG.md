@@ -11,6 +11,8 @@
 
 - Route validation rejects malformed primitive options and `goto` declarations
   without a required `to` target before runtime AST emission.
+- The declared Elixir requirement is now `~> 1.19`, matching the effective
+  minimum already required by `mobus_stepwise`.
 
 ## v0.3.1 (June 2026) — Public release hygiene
 

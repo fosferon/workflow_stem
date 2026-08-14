@@ -9,7 +9,11 @@ WorkflowStem provides three workflow profiles, each with a dedicated ALF pipelin
 - **FSM** — state-machine workflows with guard/transition/breakpoint semantics.
 - **Flow** — pure data pipelines that run a sequence of transformations end-to-end.
 
-Specs are compiled into an intermediate representation (IR) and executed by static ALF pipelines — no per-workflow module generation at runtime. The compiler supports ALF primitives (`stage`, `switch`, `composer`, `goto`, `goto_point`, `done`, `dead_end`, `from`, `plug_with`, `tbd`) for specs that declare custom routes.
+Specs are compiled into an intermediate representation (IR). Specs without
+custom routes use the static ALF pipelines; routed specs are validated and
+compiled into cached per-workflow ALF modules at runtime. The compiler supports
+all ten ALF primitives: `stage`, `switch`, `composer`, `goto`, `goto_point`,
+`done`, `dead_end`, `from`, `plug_with`, and `tbd`.
 
 ## Installation
 
@@ -136,11 +140,17 @@ config :workflow_stem,
 
 ### Compiler & custom routes
 
-For specs that declare branching logic, `WorkflowStem.Compiler` translates route definitions into ALF component descriptors:
+For specs that declare custom routing, `WorkflowStem.Compiler` validates the
+IR and translates route definitions into ALF component descriptors. The
+registry normally performs this automatically; direct builder use looks like:
 
 ```elixir
-components = WorkflowStem.Compiler.compile(spec)
-# Returns e.g. [{:switch, "route_x", %{...}}, {:goto, "skip", ...}, ...]
+alias WorkflowStem.{Compiler, Pipeline.Builder}
+
+:ok = Compiler.validate(ir)
+components = Compiler.components_for_engine(ir)
+routing = Compiler.engine_routing(ir)
+{:ok, pipeline_module} = Builder.build(MyApp.MyWorkflowPipeline, components, routing)
 ```
 
 ## Documentation

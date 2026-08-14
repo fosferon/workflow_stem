@@ -8,7 +8,7 @@ defmodule WorkflowStem.MixProject do
     [
       app: :workflow_stem,
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       description: "Shared workflow runtime — stepwise, FSM, and flow engines with ALF pipelines",
