@@ -168,14 +168,20 @@ defmodule WorkflowStem.Pipeline.BuilderTest do
     end
   end
 
-  describe "build/3 — failure modes" do
-    test "raises on :plug_with until emission is implemented" do
-      descriptors = [{:plug_with, SomeMod, %{state: :a, body: []}}]
-      mod = unique_module("PlugWithUnsupported")
+  describe "build/3 — plug_with" do
+    test "compiles a plug scope with a recursively emitted body" do
+      descriptors = [
+        {:plug_with, SomeMod,
+         %{
+           state: :a,
+           count: 1,
+           opts: [],
+           body: [{:tbd, :inside, %{state: :a, count: 1, opts: []}}]
+         }}
+      ]
 
-      assert_raise ArgumentError, ~r/plug_with not yet implemented/, fn ->
-        Builder.build(mod, descriptors, %{})
-      end
+      mod = unique_module("PlugWithPipeline")
+      assert {:ok, ^mod} = Builder.build(mod, descriptors, %{})
     end
   end
 end

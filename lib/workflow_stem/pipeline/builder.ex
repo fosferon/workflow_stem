@@ -29,18 +29,15 @@ defmodule WorkflowStem.Pipeline.Builder do
 
   ## Scope in this iteration
 
-  AST emission is implemented for: `stage`, `switch`, `composer`, `goto`,
-  `goto_point`, `done`, `dead_end`, `from`, `tbd`. Support for `plug_with`
-  follows the same pattern but is not yet emitted — a descriptor of
-  `{:plug_with, ...}` will raise here. (The Compiler accepts and validates
-  it; Builder just hasn't rendered the AST yet.)
+  AST emission is implemented for all ALF DSL primitives: `stage`, `switch`,
+  `composer`, `goto`, `goto_point`, `done`, `dead_end`, `from`, `plug_with`,
+  and `tbd`.
   """
 
   @doc """
   Build and compile a pipeline module. Returns `{:ok, module}` on success.
 
-  Raises `ArgumentError` if a descriptor has no AST emitter yet
-  (currently `:plug_with`).
+  Raises `ArgumentError` if a descriptor has no AST emitter.
   """
   @spec build(module(), [tuple()], map()) :: {:ok, module()}
   def build(module_name, descriptors, routing)
@@ -153,9 +150,15 @@ defmodule WorkflowStem.Pipeline.Builder do
     end
   end
 
-  defp descriptor_ast({:plug_with, _module, _meta}) do
-    raise ArgumentError,
-          "Builder: AST emission for :plug_with not yet implemented. The descriptor is accepted by Compiler; add emission here when a consumer needs it."
+  defp descriptor_ast({:plug_with, module, meta}) do
+    body_ast = meta.body |> Enum.map(&descriptor_ast/1) |> list_ast()
+    opts = meta_opts(meta)
+
+    quote do
+      plug_with(unquote(module), unquote(opts)) do
+        unquote(body_ast)
+      end
+    end
   end
 
   defp descriptor_ast(other) do
@@ -172,6 +175,8 @@ defmodule WorkflowStem.Pipeline.Builder do
 
     {:%{}, [], pairs}
   end
+
+  defp list_ast(elements), do: elements
 
   # ── Meta → keyword opts accepted by ALF.DSL macros ──────────────────
 
