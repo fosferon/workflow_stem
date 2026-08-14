@@ -18,6 +18,11 @@ defmodule WorkflowStem.Pipeline.BuilderTest do
     end
   end
 
+  defmodule ScopePlug do
+    def plug(event, _opts), do: Map.put(event, :inside_scope, true)
+    def unplug(event, original, _opts), do: Map.put(event, :scope_input, original)
+  end
+
   defmodule Routers do
     # Classic switch resolver — returns a branch key
     def triage_route(event, _opts) do
@@ -171,17 +176,31 @@ defmodule WorkflowStem.Pipeline.BuilderTest do
   describe "build/3 — plug_with" do
     test "compiles a plug scope with a recursively emitted body" do
       descriptors = [
-        {:plug_with, SomeMod,
+        {:plug_with, ScopePlug,
          %{
            state: :a,
            count: 1,
            opts: [],
-           body: [{:tbd, :inside, %{state: :a, count: 1, opts: []}}]
+           body: [
+             {:stage, TagStage, %{state: :a, count: 1, opts: [tag: :inside]}}
+           ]
          }}
       ]
 
       mod = unique_module("PlugWithPipeline")
       assert {:ok, ^mod} = Builder.build(mod, descriptors, %{})
+
+      try do
+        :ok = mod.start()
+
+        assert mod.call(%{tags: []}) == %{
+                 tags: [:inside],
+                 inside_scope: true,
+                 scope_input: %{tags: []}
+               }
+      after
+        mod.stop()
+      end
     end
 
     test "compiles nested plug scopes containing a switch" do

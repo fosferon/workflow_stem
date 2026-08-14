@@ -151,6 +151,9 @@ defmodule WorkflowStem.Pipeline.Builder do
   end
 
   defp descriptor_ast({:plug_with, module, meta}) do
+    # ALF.DSL.plug_with/3 expands to `[plug] ++ block ++ [unplug]`, so its
+    # block must evaluate to the list of component ASTs. A normal __block__
+    # would evaluate only its final expression and silently discard siblings.
     body_ast = meta.body |> Enum.map(&descriptor_ast/1) |> list_ast()
     opts = meta_opts(meta)
 

@@ -20,9 +20,10 @@ defmodule WorkflowStem.Compiler do
       {:plug_with,  module,      body}               # plug_with/2 + do block
       {:tbd,        name}                            # tbd/2
 
-  `opts` is a keyword list (all optional): `:count`, `:opts` (a keyword list
-  of user options passed to the component), and `:to`/`:if` for `:goto`,
-  `:memo` for `:composer`.
+  `opts` is a keyword list containing optional `:count`, `:opts` (a keyword
+  list of user options passed to the component), and `:memo` for `:composer`.
+  For `:goto`, `:to` is required and `:if` is optional (defaulting to the goto
+  name).
 
   A state's `:route` may be a single tuple or a list. Inside branches (the
   bodies of `:switch` and `:plug_with`), the contents are lists of the same
