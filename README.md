@@ -22,7 +22,7 @@ Add `workflow_stem` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:workflow_stem, "~> 0.3.0"}
+    {:workflow_stem, "~> 0.4.0"}
   ]
 end
 ```

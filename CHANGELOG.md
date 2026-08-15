@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 (August 15, 2026) — Full ALF routing emission
 
 ### Added
 
