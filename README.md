@@ -40,17 +40,21 @@ spec = %{
   steps: [:step_one, :step_two, :step_three],
   states: %{
     step_one: %{
-      action: {:capability, :collect_name},
-      projection: %{title: "What is your name?"}
+      step_number: 0,
+      ui: %{key: :step_one, assigns: %{title: "What is your name?"}}
     },
     step_two: %{
-      action: {:capability, :collect_email},
-      projection: %{title: "Email address"}
+      step_number: 1,
+      ui: %{key: :step_two, assigns: %{title: "Email address"}}
     },
     step_three: %{
-      action: {:capability, :submit},
-      projection: %{title: "Review & submit"}
+      step_number: 2,
+      ui: %{key: :step_three, assigns: %{title: "Review & submit"}}
     }
+  },
+  transitions: %{
+    step_one_complete: %{to: :step_two},
+    step_two_complete: %{to: :step_three}
   }
 }
 ```
@@ -59,7 +63,7 @@ spec = %{
 
 ```elixir
 artifact = %{artifact_hash: "my-workflow-v1", spec: spec}
-{:ok, ir} = WorkflowStem.Loader.get_or_compile("tenant_1", "my_workflow", artifact)
+{:ok, _ir} = WorkflowStem.Loader.get_or_compile("tenant_1", "my_workflow", artifact)
 ```
 
 ### 3. Run through an engine
@@ -67,15 +71,16 @@ artifact = %{artifact_hash: "my-workflow-v1", spec: spec}
 ```elixir
 alias WorkflowStem.Engines.StepwiseEngine
 
-runtime = %{
+runtime_context = %{
   execution_id: "ex_123",
   tenant_id: "tenant_1",
-  spec: spec,
-  ir: ir
+  sync: true,
+  initial_context: %{}
 }
 
-{:ok, projection} = StepwiseEngine.init(runtime)
-{:ok, projection} = StepwiseEngine.advance(runtime, %{input: "Leonidas"})
+{:ok, runtime} = StepwiseEngine.init(spec, runtime_context)
+{:ok, runtime} =
+  StepwiseEngine.handle_event(runtime, :step_one_complete, %{input: "Leonidas"})
 ```
 
 ## Runner
