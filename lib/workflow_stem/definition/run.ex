@@ -99,11 +99,15 @@ defmodule WorkflowStem.Definition.Run do
     end
   end
 
-  @doc "Carries on from a snapshot: a run that was interrupted."
+  @doc """
+  Carries on from a snapshot: a run that was interrupted, or one that
+  failed. A branch that failed is put back at the step it failed on and
+  tries it again; everything already done stays done.
+  """
   @spec continue(map(), map(), keyword()) :: {:ok, outcome()} | {:error, term()}
   def continue(definition, checkpoint, opts) do
     with {:ok, runtime} <- restore(definition, checkpoint, opts) do
-      {:ok, walk(runtime, opts)}
+      {:ok, fire(runtime, :retry, %{}, opts)}
     end
   end
 
@@ -143,8 +147,19 @@ defmodule WorkflowStem.Definition.Run do
         finish(runtime, :waiting, nil, events, opts)
 
       true ->
-        finish(runtime, :completed, nil, events, opts)
+        # Nothing left to move. A branch that failed and that no join
+        # accounted for means the run did not get to its end.
+        case stranded_failure(runtime) do
+          nil -> finish(runtime, :completed, nil, events, opts)
+          reason -> finish(runtime, :failed, reason, events, opts)
+        end
     end
+  end
+
+  defp stranded_failure(runtime) do
+    Enum.find_value(runtime.failed_tokens, fn {_id, token} ->
+      if Map.get(token, :absorbed) != true, do: Map.get(token, :failure_reason) || :failed
+    end)
   end
 
   # A block that raises must not take the run's state with it: the run fails

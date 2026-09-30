@@ -135,6 +135,33 @@ defmodule WorkflowStem.Definition.RunTest do
 
       assert outcome.status == :failed
       assert outcome.error == :http_503
+      flush()
+
+      # the provider recovers: carrying on retries the booking that failed and
+      # finishes, without searching again or re-fetching the one already saved
+      stub("fetch", fn %{"id" => id} -> {:ok, %{"id" => id}} end)
+
+      assert {:ok, outcome} = Run.continue(reservation_sync(), stored(outcome), tenant_id: "smv")
+
+      assert outcome.status == :completed
+      assert outcome.context["flow_results"]["saved"]["completed"] == 2
+      assert_received {:called, "fetch", %{"id" => 12}}
+      refute_received {:called, "fetch", %{"id" => 11}}
+      refute_received {:called, "modified", _}
+
+      # a failed run restored and merely looked at is still failed, not "done"
+      stub("fetch", fn _ -> {:error, :http_503} end)
+
+      assert {:ok, again} =
+               Run.start(reservation_sync(),
+                 tenant_id: "smv",
+                 context: %{"run" => %{"since" => "a", "until" => "b"}}
+               )
+
+      assert again.status == :failed
+
+      assert {:ok, %{status: :failed}} =
+               Run.continue(reservation_sync(), stored(again), tenant_id: "smv")
     end
 
     test "an interrupted run carries on from its last snapshot, not from the start" do
