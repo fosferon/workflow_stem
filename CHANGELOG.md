@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.5.0-dev (unreleased) — workflows written as data
+
+### Added
+
+- **`WorkflowStem.Definition`** — a workflow as a plain map (what a designer
+  saves, what a database row stores): nodes that name a block and give it
+  arguments, `wait`, `set`, `fork` / `join` / `for_each` / `end`, and edges
+  with conditions and timeout paths. `compile/1` turns it into a
+  `mobus_stepwise` graph spec; nothing in a definition becomes an atom.
+- **`Definition.Template`** — `{{params.x}}`, `{{node.field}}`, `{{item}}`
+  references. A reference to nothing is an error unless marked optional
+  (`{{?x}}`).
+- **`Definition.Inputs`** — the settings a workflow declares: defaults,
+  coercion from form text, limits, and `describe/1` for a settings form.
+- **`Definition.Block`** / **`Definition.Blocks`** — the behaviour a host's
+  building blocks implement and the dispatcher a host's capability runner
+  calls; built-in `stem.wait` and `stem.set`.
+- **`Definition.Run`** — starts, resumes, times out and continues a run;
+  snapshots on the way so an interrupted run carries on from its last
+  snapshot.
+
+### Changed
+
+- Builds on the `mobus_stepwise` graph-mode branch (0.4.0-dev).
+
 ## v0.4.0 (August 15, 2026) — Full ALF routing emission
 
 ### Added
