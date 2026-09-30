@@ -1,7 +1,7 @@
 defmodule WorkflowStem.MixProject do
   use Mix.Project
 
-  @version "0.4.0"
+  @version "0.5.0-dev"
   @source_url "https://github.com/fosferon/workflow_stem"
 
   def project do
@@ -33,7 +33,7 @@ defmodule WorkflowStem.MixProject do
     [
       {:alf, "~> 0.12"},
       {:jason, "~> 1.4"},
-      {:mobus_stepwise, "~> 0.2.0"},
+      {:mobus_stepwise, "~> 0.3.1"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
   end
