@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.0 — The first step runs in the runner
+## v0.5.0 (unreleased; dated when cut) — The first step runs in the runner
 
 ### Changed
 
@@ -16,13 +16,16 @@
   `:paused`; an `init/2` that raises, throws, exits or returns an
   unexpected value does the same with `{:init_raised, message}`,
   `{:init_threw, value}`, `{:init_exited, reason}` or
-  `{:unexpected_init_result, value}`, and the caller is never taken down
-  through the link. `start/3` returns `{:error, reason}` only when the runner
+  `{:unexpected_init_result, value}`, and an init crash never takes the
+  caller down through the link. `start/3` returns `{:error, reason}` only when the runner
   does not report started within a second (`:runner_start_timeout`); that
   runner is now stopped rather than left running, and its report can never
   answer a later `start/3` from the same process.
 - A failed step whose runtime names no state is reported as step
   `"unknown"`, not `""`.
+- An event sink whose `append_event/2` or `publish_event/1` fails is
+  logged, like the other adapter calls, instead of crashing the run (and
+  its linked caller).
 
 ### Fixed
 

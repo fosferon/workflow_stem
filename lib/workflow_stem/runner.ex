@@ -7,10 +7,10 @@ defmodule WorkflowStem.Runner do
   publication, and control-state implementations through adapter modules.
 
   `start/3` returns as soon as the runner process has offered itself to the
-  control store and emitted `:started`; the engine's `init/2`, which runs the first step's
-  entry action, runs in that process, not in the caller. Everything that
-  happens from the first step on, an init failure included, arrives as
-  events.
+  control store and emitted `:started`; the engine's `init/2`, which runs
+  the first step's entry action, runs in that process, not in the caller.
+  Everything that happens from the first step on, an init failure
+  included, arrives as events.
   """
 
   require Logger
@@ -323,7 +323,9 @@ defmodule WorkflowStem.Runner do
         |> Map.put_new(:tenant_id, opts.tenant_id)
     }
 
-    _ = EventLog.emit(opts.event_sink, opts.tenant_id, event)
+    # A sink that fails is logged, like every other adapter call; it does
+    # not crash the run, nor its caller through the link.
+    _ = safe_call(fn -> EventLog.emit(opts.event_sink, opts.tenant_id, event) end)
     :ok
   end
 

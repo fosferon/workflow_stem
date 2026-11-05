@@ -105,10 +105,10 @@ alias WorkflowStem.Runner
 ```
 
 `start/3` returns once the runner process has offered itself to the control
-store and emitted `:started`. The first step runs in that process, so a long first step never
-blocks the caller, and everything from the first step on, an init failure
-included, arrives as events (a failed init emits `:step_failed` and
-`:paused`).
+store and emitted `:started`. The first step runs in that process, so a
+long first step never blocks the caller, and everything from the first
+step on, an init failure included, arrives as events (a failed init emits
+`:step_failed` and `:paused`).
 
 Events are appended durably first, then published for live subscribers. Late
 subscribers replay through the same `EventSink`:

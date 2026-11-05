@@ -154,11 +154,14 @@ defmodule WorkflowStem.RunnerTest do
     }
   end
 
-  defp start_scripted(script, spec \\ scripted_spec(), control \\ PidControl) do
+  defp start_scripted(
+         script,
+         spec \\ scripted_spec(),
+         control \\ PidControl,
+         exec_id \\ "runner-init-#{System.unique_integer([:positive])}"
+       ) do
     Application.put_env(:workflow_stem, :scripted_init, script)
     on_exit(fn -> Application.delete_env(:workflow_stem, :scripted_init) end)
-
-    exec_id = "runner-init-#{System.unique_integer([:positive])}"
 
     result =
       Runner.start(spec, %{},
@@ -303,7 +306,7 @@ defmodule WorkflowStem.RunnerTest do
 
     assert result == {:error, :runner_start_timeout}
     Process.sleep(800)
-    refute_received {:runner_started, ^exec_id}
+    refute_received {:runner_started, _ref, ^exec_id}
     refute_received {:event, %{execution_id: ^exec_id, kind: :started}}
     refute_received {:init_running, _}
   end
@@ -314,6 +317,54 @@ defmodule WorkflowStem.RunnerTest do
 
     assert result == {:ok, exec_id}
     assert_received {:runner_started, _ref, "some-earlier-run"}
+  end
+
+  # Round 3 F2: the ref is what tells two starts of the same id apart.
+  test "a stale report for the same id never answers a new start of it" do
+    exec_id = "runner-same-#{System.unique_integer([:positive])}"
+    stale = make_ref()
+    send(self(), {:runner_started, stale, exec_id})
+
+    {result, ^exec_id} = start_scripted({:block, self()}, scripted_spec(), PidControl, exec_id)
+
+    assert result == {:ok, exec_id}
+    # start/3 waited for its own report: the run had registered and emitted
+    # :started before it returned, and the stale report is still unread.
+    assert_received {:runner, _pid}
+    assert_received {:event, %{execution_id: ^exec_id, kind: :started}}
+    assert_received {:runner_started, ^stale, ^exec_id}
+    assert_receive {:init_running, runner}, 1_000
+    send(runner, :release)
+  end
+
+  # Round 3 F4: a failing sink does not take the run or its caller down.
+  defmodule RaisingSink do
+    @moduledoc false
+    def append_event(_tenant, _event), do: raise("sink down")
+    def publish_event(_event), do: :ok
+    def replay(_tenant, _id, _opts), do: {:ok, []}
+  end
+
+  test "a raising event sink is logged and the run goes on" do
+    Application.put_env(:workflow_stem, :scripted_init, {:block, self()})
+    on_exit(fn -> Application.delete_env(:workflow_stem, :scripted_init) end)
+
+    ExUnit.CaptureLog.capture_log(fn ->
+      assert {:ok, _id} =
+               Runner.start(scripted_spec(), %{},
+                 tenant_id: "t1",
+                 execution_id: "runner-sink-#{System.unique_integer([:positive])}",
+                 engine: ScriptedEngine,
+                 event_sink: RaisingSink,
+                 control_store: PidControl,
+                 checkpoint_store: NoopCheckpoint
+               )
+
+      assert_receive {:init_running, runner}, 1_000
+      ref = Process.monitor(runner)
+      send(runner, :release)
+      assert_receive {:DOWN, ^ref, :process, ^runner, :normal}, 2_000
+    end)
   end
 
   test "emits durable ordered events and supports replay from a sequence" do
