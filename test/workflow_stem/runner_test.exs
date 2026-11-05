@@ -52,7 +52,12 @@ defmodule WorkflowStem.RunnerTest do
     Process.register(self(), WorkflowStem.RunnerTest.Owner)
 
     on_exit(fn ->
-      if Process.whereis(MemorySink), do: Agent.stop(MemorySink)
+      # The agent is linked to the test process and may already be gone.
+      try do
+        if Process.whereis(MemorySink), do: Agent.stop(MemorySink)
+      catch
+        :exit, _ -> :ok
+      end
 
       if Process.whereis(WorkflowStem.RunnerTest.Owner),
         do: Process.unregister(WorkflowStem.RunnerTest.Owner)
@@ -66,8 +71,11 @@ defmodule WorkflowStem.RunnerTest do
   defmodule ScriptedEngine do
     @moduledoc false
     # init/2 does what the test put in the application env under
-    # :scripted_init: block until released, wait, fail, or raise.
+    # :scripted_init: block until released, wait, fail, raise, throw, exit,
+    # or return something no engine should.
+    @behaviour WorkflowStem.EngineBehaviour
 
+    @impl true
     def init(spec, ctx) do
       runtime = %{
         spec: spec,
@@ -92,11 +100,34 @@ defmodule WorkflowStem.RunnerTest do
 
         :raise ->
           raise "init blew up"
+
+        :throw ->
+          throw(:init_threw_this)
+
+        :exit ->
+          exit(:init_exit_reason)
+
+        :weird ->
+          :not_an_init_result
       end
     end
 
+    @impl true
     def handle_event(runtime, _event, _payload), do: {:ok, %{runtime | current_state: :done}}
+    @impl true
     def get_state(_runtime), do: %{available_events: [:next]}
+    @impl true
+    def checkpoint(runtime), do: Map.take(runtime, [:current_state, :context])
+    @impl true
+    def restore(_spec, _checkpoint, _ctx), do: {:error, :not_implemented}
+  end
+
+  defmodule SlowControl do
+    @moduledoc false
+    # Registers after start/3 has stopped waiting (1 s).
+    def register_execution(_execution_id, _pid, _speed), do: Process.sleep(1_500)
+    def peek(_execution_id), do: nil
+    def get_pause_report(_execution_id), do: nil
   end
 
   defmodule PidControl do
@@ -123,20 +154,32 @@ defmodule WorkflowStem.RunnerTest do
     }
   end
 
-  defp start_scripted(script) do
+  defp start_scripted(script, spec \\ scripted_spec(), control \\ PidControl) do
     Application.put_env(:workflow_stem, :scripted_init, script)
     on_exit(fn -> Application.delete_env(:workflow_stem, :scripted_init) end)
+
     exec_id = "runner-init-#{System.unique_integer([:positive])}"
 
     result =
-      Runner.start(scripted_spec(), %{},
+      Runner.start(spec, %{},
         tenant_id: "t1",
         execution_id: exec_id,
         engine: ScriptedEngine,
         event_sink: MemorySink,
-        control_store: PidControl,
+        control_store: control,
         checkpoint_store: NoopCheckpoint
       )
+
+    # PidControl reports the runner before start/3 returns; a run this test
+    # leaves waiting or blocked is ended with it, and the report is put back
+    # for tests that want it.
+    receive do
+      {:runner, pid} = msg ->
+        on_exit(fn -> Process.exit(pid, :kill) end)
+        send(self(), msg)
+    after
+      0 -> :ok
+    end
 
     {result, exec_id}
   end
@@ -145,25 +188,35 @@ defmodule WorkflowStem.RunnerTest do
     {result, exec_id} = start_scripted({:block, self()})
 
     assert result == {:ok, exec_id}
-    assert_receive {:event, %{kind: :started}}, 1_000
+    assert_receive {:event, %{execution_id: ^exec_id, kind: :started}}, 1_000
     assert_receive {:init_running, runner}, 1_000
-    refute_received {:event, %{kind: :step_started}}
+    refute_received {:event, %{execution_id: ^exec_id, kind: :step_started}}
 
     send(runner, :release)
-    assert_receive {:event, %{kind: :step_started, payload: %{step_id: "first"}}}, 1_000
-    assert_receive {:event, %{kind: :completed}}, 1_000
+
+    assert_receive {:event,
+                    %{execution_id: ^exec_id, kind: :step_started, payload: %{step_id: "first"}}},
+                   1_000
+
+    assert_receive {:event, %{execution_id: ^exec_id, kind: :completed}}, 1_000
   end
 
   test "a first step that waits is checkpointed and resumes" do
     cfg = %{"kind" => "checkpoint", "display" => "Look", "actions" => ["approve"]}
-    {{:ok, _}, _exec_id} = start_scripted({:wait, cfg})
+    {{:ok, _}, exec_id} = start_scripted({:wait, cfg})
 
     assert_receive {:runner, runner}, 1_000
-    assert_receive {:event, %{kind: :step_started, payload: %{step_id: "first"}}}, 1_000
-    assert_receive {:event, %{kind: :checkpoint, payload: %{display: "Look"}}}, 1_000
+
+    assert_receive {:event,
+                    %{execution_id: ^exec_id, kind: :step_started, payload: %{step_id: "first"}}},
+                   1_000
+
+    assert_receive {:event,
+                    %{execution_id: ^exec_id, kind: :checkpoint, payload: %{display: "Look"}}},
+                   1_000
 
     send(runner, {:resume, %{}})
-    assert_receive {:event, %{kind: :completed}}, 1_000
+    assert_receive {:event, %{execution_id: ^exec_id, kind: :completed}}, 1_000
   end
 
   test "an init error arrives as a failed step and a pause, not as start's return" do
@@ -175,17 +228,84 @@ defmodule WorkflowStem.RunnerTest do
                     %{kind: :step_failed, payload: %{step_id: "first", reason: :bad_spec}}},
                    1_000
 
-    assert_receive {:event, %{kind: :paused, payload: %{report: %{reason: :bad_spec}}}}, 1_000
+    assert_receive {:event,
+                    %{
+                      execution_id: ^exec_id,
+                      kind: :paused,
+                      payload: %{report: %{reason: :bad_spec}}
+                    }},
+                   1_000
   end
 
   test "an init that raises fails the run and leaves the caller running" do
-    {{:ok, _}, _exec_id} = start_scripted(:raise)
+    {{:ok, _}, exec_id} = start_scripted(:raise)
 
     assert_receive {:event,
                     %{kind: :step_failed, payload: %{reason: {:init_raised, "init blew up"}}}},
                    1_000
 
-    assert_receive {:event, %{kind: :paused}}, 1_000
+    assert_receive {:event, %{execution_id: ^exec_id, kind: :paused}}, 1_000
+  end
+
+  # Round 1 F1/F4: any crash or bad value from init is a failed first step;
+  # the caller, linked to the runner, is not taken down.
+  for {script, reason} <- [
+        throw: {:init_threw, :init_threw_this},
+        exit: {:init_exited, :init_exit_reason},
+        weird: {:unexpected_init_result, :not_an_init_result}
+      ] do
+    test "an init that does #{script} fails the run and leaves the caller running" do
+      {{:ok, _}, exec_id} = start_scripted(unquote(script))
+
+      assert_receive {:event,
+                      %{kind: :step_failed, payload: %{step_id: "first", reason: reason}}},
+                     1_000
+
+      assert reason == unquote(Macro.escape(reason))
+      assert_receive {:event, %{execution_id: ^exec_id, kind: :paused}}, 1_000
+      assert Process.alive?(self())
+    end
+  end
+
+  # Round 1 F3: a spec error names the initial state by either key form,
+  # and "unknown" when there is none.
+  test "a spec error names the initial state, string-keyed or missing" do
+    string_keyed =
+      scripted_spec() |> Map.delete(:initial_state) |> Map.put("initial_state", :first)
+
+    {{:ok, _}, exec_id} = start_scripted({:error, :bad_spec}, string_keyed)
+
+    assert_receive {:event,
+                    %{execution_id: ^exec_id, kind: :step_failed, payload: %{step_id: "first"}}},
+                   1_000
+
+    nameless = Map.delete(scripted_spec(), :initial_state)
+    {{:ok, _}, exec_id} = start_scripted({:error, :bad_spec}, nameless)
+
+    assert_receive {:event,
+                    %{execution_id: ^exec_id, kind: :step_failed, payload: %{step_id: "unknown"}}},
+                   1_000
+  end
+
+  # Round 1 F2: a runner that does not report started in time is stopped,
+  # and its late report never reaches the caller.
+  @tag timeout: 10_000
+  test "a runner that is too slow to start is stopped and leaves no report behind" do
+    {result, exec_id} = start_scripted({:block, self()}, scripted_spec(), SlowControl)
+
+    assert result == {:error, :runner_start_timeout}
+    Process.sleep(800)
+    refute_received {:runner_started, ^exec_id}
+    refute_received {:event, %{execution_id: ^exec_id, kind: :started}}
+    refute_received {:init_running, _}
+  end
+
+  test "a stale started report from another run never answers this start" do
+    send(self(), {:runner_started, "some-earlier-run"})
+    {result, exec_id} = start_scripted({:wait, %{"kind" => "checkpoint", "display" => "x"}})
+
+    assert result == {:ok, exec_id}
+    assert_received {:runner_started, "some-earlier-run"}
   end
 
   test "emits durable ordered events and supports replay from a sequence" do

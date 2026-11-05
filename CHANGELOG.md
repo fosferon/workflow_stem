@@ -1,23 +1,28 @@
 # Changelog
 
-## v0.5.0 (unreleased) — The first step runs in the runner
+## v0.5.0 — The first step runs in the runner
 
 ### Changed
 
 - **`WorkflowStem.Runner.start/3` no longer runs the first step in the
-  caller.** It returns `{:ok, execution_id}` once the runner process is
-  registered with the control store and has emitted `:started`; the
+  caller.** It returns `{:ok, execution_id}` once the runner process has
+  offered itself to the control store and emitted `:started`; the
   engine's `init/2`, which runs the initial state's entry action, now runs
   in the runner. A long first step no longer blocks the caller, and a host
   that follows the run's events sees them from the start.
 - **Init errors arrive as events, not as `start/3`'s return value.** A spec
   the engine refuses (`{:error, reason}`) or an entry action that fails
   marks the run failed and emits `:step_failed` (with the reason) and
-  `:paused`; an `init/2` that raises does the same with
-  `{:init_raised, message}`. `start/3` returns `{:error, reason}` only when
-  the runner does not report started within a second
-  (`:runner_start_timeout`); that runner is now stopped rather than left
-  running.
+  `:paused`; an `init/2` that raises, throws, exits or returns an
+  unexpected value does the same with `{:init_raised, message}`,
+  `{:init_threw, value}`, `{:init_exited, reason}` or
+  `{:unexpected_init_result, value}`, and the caller is never taken down
+  through the link. `start/3` returns `{:error, reason}` only when the runner
+  does not report started within a second (`:runner_start_timeout`); that
+  runner is now stopped rather than left running, and its report can never
+  answer a later `start/3` from the same process.
+- A failed step whose runtime names no state is reported as step
+  `"unknown"`, not `""`.
 
 ### Fixed
 
