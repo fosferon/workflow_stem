@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.5.0 (unreleased; dated when cut) — The first step runs in the runner
+
+### Changed
+
+- **`WorkflowStem.Runner.start/3` no longer runs the first step in the
+  caller.** It returns `{:ok, execution_id}` once the runner process has
+  offered itself to the control store and emitted `:started`; the
+  engine's `init/2`, which runs the initial state's entry action, now runs
+  in the runner. A long first step no longer blocks the caller, and a host
+  that follows the run's events sees them from the start.
+- **Init errors arrive as events, not as `start/3`'s return value.** A spec
+  the engine refuses (`{:error, reason}`) or an entry action that fails
+  marks the run failed and emits `:step_failed` (with the reason) and
+  `:paused`; an `init/2` that raises, throws, exits or returns an
+  unexpected value does the same with `{:init_raised, message}`,
+  `{:init_threw, value}`, `{:init_exited, reason}` or
+  `{:unexpected_init_result, value}`, and an init crash never takes the
+  caller down through the link. `start/3` returns `{:error, reason}` only
+  when the runner does not report started within a second
+  (`:runner_start_timeout`); that runner is now stopped rather than left
+  running, and its report can never answer a later `start/3` from the same
+  process.
+- A failed step whose runtime names no state is reported as step
+  `"unknown"`, not `""`.
+- An event sink that raises, throws or exits, or whose `append_event/2`
+  returns `{:error, reason}`, is logged once per run instead of crashing
+  the run and its linked caller (an error return used to pass in
+  silence). The other adapter calls now absorb a throw too, as they
+  already did a raise or an exit.
+- A control store that fails to give a pause report leaves the default
+  report (it used to be `:ok`).
+
+### Fixed
+
+- **A first step that waits.** An initial state whose entry action returns
+  `{:wait, runtime, cfg}` (a checkpoint as the first step) raised a
+  `CaseClauseError` in the caller. It now waits like any later step: it
+  emits `:step_started`, is checkpointed, emits its wait (`:checkpoint` or
+  `:paused`) and resumes on `{:resume, payload}`.
+
 ## v0.4.0 (August 15, 2026) — Full ALF routing emission
 
 ### Added

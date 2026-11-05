@@ -5,6 +5,12 @@ defmodule WorkflowStem.Runner do
   The runner owns the FSM walk, wait/resume loop, control checks, checkpoint
   hooks, and canonical event emission. Hosts provide persistence, live
   publication, and control-state implementations through adapter modules.
+
+  `start/3` returns as soon as the runner process has offered itself to the
+  control store and emitted `:started`; the engine's `init/2`, which runs
+  the first step's entry action, runs in that process, not in the caller.
+  Everything that happens from the first step on, an init failure
+  included, arrives as events.
   """
 
   require Logger
@@ -12,6 +18,9 @@ defmodule WorkflowStem.Runner do
   alias WorkflowStem.Engines.StepwiseEngine, as: Engine
   alias WorkflowStem.EventLog
   alias WorkflowStem.Projection
+
+  # How long start/3 waits for the runner to report started.
+  @runner_start_timeout 1_000
 
   @type opts :: [
           tenant_id: String.t(),
@@ -26,33 +35,36 @@ defmodule WorkflowStem.Runner do
           metadata: map()
         ]
 
+  @doc """
+  Starts a run of `spec` and returns `{:ok, execution_id}` once its runner
+  process has offered itself to the control store (a store that fails is
+  logged, not fatal) and emitted `:started`.
+
+  The runner then calls the engine's `init/2` (the first step's entry
+  action) itself, so a long first step never blocks the caller. Its outcome
+  arrives as events: an initial state that is ready runs on; one that waits
+  is checkpointed and emits its wait (`:checkpoint` or `:paused`) like any
+  later step; an init error, the entry action's or the spec's, marks the run
+  failed and emits `:step_failed` and `:paused` with the reason, as does an
+  init that raises (`{:init_raised, message}`), throws (`{:init_threw,
+  value}`), exits (`{:init_exited, reason}`) or returns an unexpected value
+  (`{:unexpected_init_result, value}`). A runner that does not report
+  started within a second is stopped, and the call returns
+  `{:error, :runner_start_timeout}`.
+  """
   @spec start(map(), map(), opts()) :: {:ok, String.t()} | {:error, term()}
   def start(spec, inputs \\ %{}, opts \\ []) when is_map(spec) and is_map(inputs) do
     execution_id = Keyword.get_lazy(opts, :execution_id, &uuid4/0)
     tenant_id = Keyword.get(opts, :tenant_id, "default")
     engine = Keyword.get(opts, :engine, Engine)
 
-    init_result =
-      engine.init(spec, %{
-        tenant_id: tenant_id,
-        execution_id: execution_id,
-        initial_context: inputs
-      })
+    init_context = %{tenant_id: tenant_id, execution_id: execution_id, initial_context: inputs}
 
-    case init_result do
-      {:ok, runtime} ->
-        start_runner_task(runtime, opts_for(opts, execution_id, tenant_id, engine), :ok)
-
-      {:error, {:initial_entry_action_failed, reason, runtime}} ->
-        start_runner_task(
-          runtime,
-          opts_for(opts, execution_id, tenant_id, engine),
-          {:init_error, reason}
-        )
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    start_runner_task(
+      {spec, init_context},
+      opts_for(opts, execution_id, tenant_id, engine),
+      :init
+    )
   end
 
   @spec start_from_runtime(map(), opts()) :: {:ok, String.t()} | {:error, term()}
@@ -88,38 +100,117 @@ defmodule WorkflowStem.Runner do
     }
   end
 
-  defp start_runner_task(runtime, opts, init_status) do
+  defp start_runner_task(runtime_or_init, opts, init_status) do
     parent = self()
+    execution_id = opts.execution_id
+    # Each start's report carries its own reference: a report that arrives
+    # after its start gave up can answer no other start, the same run id
+    # started again included.
+    ref = make_ref()
 
-    {:ok, _task} =
+    {:ok, task} =
       Task.start_link(fn ->
         register_execution(opts)
         emit(opts, if(init_status == :restored, do: :restored, else: :started), %{})
-        send(parent, {:runner_started, opts.execution_id})
+        send(parent, {:runner_started, ref, opts.execution_id})
 
         case init_status do
-          :ok ->
-            emit_state_events(opts, runtime)
-            loop(runtime, opts, %{})
+          :init ->
+            {spec, init_context} = runtime_or_init
+            init_in_runner(spec, init_context, opts)
 
           :restored ->
-            loop(runtime, opts, %{})
-
-          {:init_error, reason} ->
-            handle_init_error(opts, runtime, reason)
+            loop(runtime_or_init, opts, %{})
         end
       end)
 
+    # Only this start's own report counts (its ref).
     receive do
-      {:runner_started, execution_id} -> {:ok, execution_id}
+      {:runner_started, ^ref, ^execution_id} ->
+        {:ok, execution_id}
     after
-      1_000 -> {:error, :runner_start_timeout}
+      @runner_start_timeout ->
+        # A runner that never reported started is stopped, not left running
+        # behind an error the caller sees, and a report it sent at the last
+        # moment is taken out of the caller's mailbox.
+        Process.unlink(task)
+        Process.exit(task, :kill)
+
+        receive do
+          {:runner_started, ^ref, ^execution_id} -> :ok
+        after
+          0 -> :ok
+        end
+
+        {:error, :runner_start_timeout}
+    end
+  end
+
+  # The engine's init runs the initial state's entry action (the first step),
+  # here in the runner rather than in start/3's caller.
+  defp init_in_runner(spec, init_context, opts) do
+    case safe_init(opts.engine, spec, init_context) do
+      {:ok, runtime} ->
+        emit_state_events(opts, runtime)
+        loop(runtime, opts, %{})
+
+      {:wait, runtime, wait_cfg} ->
+        emit_step_started(opts, step_for_runtime(runtime), runtime)
+        wait_at(runtime, opts, wait_cfg)
+
+      {:error, {:initial_entry_action_failed, reason, runtime}} ->
+        handle_init_error(opts, runtime, reason)
+
+      {:error, reason} ->
+        handle_init_error(opts, spec_runtime(spec), reason)
+
+      other ->
+        handle_init_error(opts, spec_runtime(spec), {:unexpected_init_result, other})
+    end
+  end
+
+  # Any crash in init (an exception, a throw, an exit, e.g. from a
+  # capability's GenServer.call) is a failed first step, reported as events;
+  # it never reaches the caller through the link.
+  defp safe_init(engine, spec, init_context) do
+    engine.init(spec, init_context)
+  rescue
+    error -> {:error, {:init_raised, Exception.message(error)}}
+  catch
+    :throw, value -> {:error, {:init_threw, value}}
+    :exit, reason -> {:error, {:init_exited, reason}}
+  end
+
+  # A runtime-shaped map for reporting a spec that did not initialise: its
+  # initial state, so the failure names the step it could not enter.
+  defp spec_runtime(spec) do
+    state = Map.get(spec, :initial_state) || Map.get(spec, "initial_state")
+    %{current_state: state, spec: spec, context: %{}}
+  end
+
+  defp wait_at(runtime, opts, wait_cfg) do
+    checkpoint(opts, runtime, wait_cfg)
+    emit_wait(opts, wait_cfg)
+
+    case wait_for_resume() do
+      {:resume, resume_payload} -> loop(runtime, opts, resume_payload)
+      :abort -> mark_status(opts, "aborted") && emit(opts, :aborted, %{})
+    end
+  end
+
+  # The failed step's id; "unknown" when the runtime names no state.
+  defp step_id(%{id: id}, _runtime) when is_binary(id) and id != "", do: id
+
+  defp step_id(_step, runtime) do
+    case Map.get(runtime, :current_state) do
+      nil -> "unknown"
+      state -> to_string(state)
     end
   end
 
   defp handle_init_error(opts, runtime, reason) do
     step = step_for_runtime(runtime)
-    step_id = step.id || to_string(Map.get(runtime, :current_state, "unknown"))
+    step_id = step_id(step, runtime)
 
     if step.id, do: emit_step_started(opts, step, runtime)
 
@@ -161,17 +252,11 @@ defmodule WorkflowStem.Runner do
           emit_step_started(opts, step_for_runtime(new_runtime), new_runtime)
         end
 
-        checkpoint(opts, new_runtime, wait_cfg)
-        emit_wait(opts, wait_cfg)
-
-        case wait_for_resume() do
-          {:resume, resume_payload} -> loop(new_runtime, opts, resume_payload)
-          :abort -> mark_status(opts, "aborted") && emit(opts, :aborted, %{})
-        end
+        wait_at(new_runtime, opts, wait_cfg)
 
       {:error, reason, failed_runtime} ->
         step = step_for_runtime(failed_runtime)
-        step_id = step.id || to_string(Map.get(failed_runtime, :current_state, "unknown"))
+        step_id = step_id(step, failed_runtime)
         mark_status(opts, "failed")
         emit(opts, :step_failed, %{step_id: step_id, reason: reason})
         emit_pause(opts, %{reason: reason})
@@ -218,13 +303,14 @@ defmodule WorkflowStem.Runner do
   defp emit_wait(opts, cfg), do: emit_pause(opts, cfg)
 
   defp emit_pause(opts, default) do
+    # A store that has no report, or fails to give one, leaves the default.
     report =
       case opts.control_store do
         mod when is_atom(mod) -> safe_call(fn -> mod.get_pause_report(opts.execution_id) end)
         _ -> nil
       end
 
-    emit(opts, :paused, %{report: report || default})
+    emit(opts, :paused, %{report: if(is_map(report), do: report, else: default)})
   end
 
   defp emit(opts, kind, payload) do
@@ -238,7 +324,30 @@ defmodule WorkflowStem.Runner do
         |> Map.put_new(:tenant_id, opts.tenant_id)
     }
 
-    _ = EventLog.emit(opts.event_sink, opts.tenant_id, event)
+    # A sink that fails (raises, throws or exits, or an append that
+    # returns an error) is logged, like every other adapter call; it does
+    # not crash the run, nor its caller through the link. Once per run: a
+    # sink that stays down does not log every event.
+    if Process.get(:workflow_stem_sink_failed) do
+      _ = quiet_call(fn -> EventLog.emit(opts.event_sink, opts.tenant_id, event) end)
+    else
+      case try_call(fn -> EventLog.emit(opts.event_sink, opts.tenant_id, event) end) do
+        failure when elem(failure, 0) in [:failed, :error] ->
+          why =
+            if elem(failure, 0) == :failed, do: elem(failure, 1), else: inspect(elem(failure, 1))
+
+          Process.put(:workflow_stem_sink_failed, true)
+
+          Logger.warning(
+            "[WorkflowStem.Runner] event sink failed (#{why}); further sink failures " <>
+              "in this run are not logged"
+          )
+
+        _emitted ->
+          :ok
+      end
+    end
+
     :ok
   end
 
@@ -323,16 +432,33 @@ defmodule WorkflowStem.Runner do
     }
   end
 
+  # Every adapter call: a raise, a throw or an exit is logged and the run
+  # goes on.
   defp safe_call(fun) do
+    case try_call(fun) do
+      {:failed, why} ->
+        Logger.warning("[WorkflowStem.Runner] adapter call failed: #{why}")
+        :ok
+
+      result ->
+        result
+    end
+  end
+
+  defp quiet_call(fun) do
+    case try_call(fun) do
+      {:failed, _why} -> :ok
+      result -> result
+    end
+  end
+
+  defp try_call(fun) do
     fun.()
   rescue
-    e ->
-      Logger.warning("[WorkflowStem.Runner] adapter call failed: #{Exception.message(e)}")
-      :ok
+    e -> {:failed, Exception.message(e)}
   catch
-    :exit, reason ->
-      Logger.warning("[WorkflowStem.Runner] adapter call exited: #{inspect(reason)}")
-      :ok
+    :throw, value -> {:failed, "threw #{inspect(value)}"}
+    :exit, reason -> {:failed, "exited #{inspect(reason)}"}
   end
 
   import Bitwise
