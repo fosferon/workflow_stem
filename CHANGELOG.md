@@ -24,13 +24,13 @@
   process.
 - A failed step whose runtime names no state is reported as step
   `"unknown"`, not `""`.
-- An event sink whose `append_event/2` or `publish_event/1` fails (raises,
-  throws, exits, or returns `{:error, reason}`) is logged once per run
-  instead of crashing the run and its linked caller (an error return used
-  to pass in silence).
+- An event sink that raises, throws or exits, or whose `append_event/2`
+  returns `{:error, reason}`, is logged once per run instead of crashing
+  the run and its linked caller (an error return used to pass in
+  silence). The other adapter calls now absorb a throw too, as they
+  already did a raise or an exit.
 - A control store that fails to give a pause report leaves the default
-  report (it used to be `:ok`). The other adapter calls now absorb a throw too, as
-  they already did a raise or an exit.
+  report (it used to be `:ok`).
 
 ### Fixed
 
