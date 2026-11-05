@@ -49,8 +49,8 @@ defmodule WorkflowStem.Runner do
   init that raises (`{:init_raised, message}`), throws (`{:init_threw,
   value}`), exits (`{:init_exited, reason}`) or returns an unexpected value
   (`{:unexpected_init_result, value}`). A runner that does not report
-  started within a second is stopped, and the call returns `{:error,
-  :runner_start_timeout}`.
+  started within a second is stopped, and the call returns
+  `{:error, :runner_start_timeout}`.
   """
   @spec start(map(), map(), opts()) :: {:ok, String.t()} | {:error, term()}
   def start(spec, inputs \\ %{}, opts \\ []) when is_map(spec) and is_map(inputs) do
@@ -324,10 +324,10 @@ defmodule WorkflowStem.Runner do
         |> Map.put_new(:tenant_id, opts.tenant_id)
     }
 
-    # A sink that fails (raises, throws or exits, or an append that returns
-    # an error) is logged, like every other adapter call; it does not crash the run, nor
-    # its caller through the link. Once per run: a sink that stays down does
-    # not log every event.
+    # A sink that fails (raises, throws or exits, or an append that
+    # returns an error) is logged, like every other adapter call; it does
+    # not crash the run, nor its caller through the link. Once per run: a
+    # sink that stays down does not log every event.
     if Process.get(:workflow_stem_sink_failed) do
       _ = quiet_call(fn -> EventLog.emit(opts.event_sink, opts.tenant_id, event) end)
     else
