@@ -340,6 +340,7 @@ defmodule WorkflowStem.RunnerTest do
   # Round 3 F4: a failing sink does not take the run or its caller down.
   defmodule RaisingSink do
     @moduledoc false
+    @behaviour WorkflowStem.Adapters.EventSink
     def append_event(_tenant, _event), do: raise("sink down")
     def publish_event(_event), do: :ok
     def replay(_tenant, _id, _opts), do: {:ok, []}
@@ -349,22 +350,48 @@ defmodule WorkflowStem.RunnerTest do
     Application.put_env(:workflow_stem, :scripted_init, {:block, self()})
     on_exit(fn -> Application.delete_env(:workflow_stem, :scripted_init) end)
 
-    ExUnit.CaptureLog.capture_log(fn ->
-      assert {:ok, _id} =
-               Runner.start(scripted_spec(), %{},
-                 tenant_id: "t1",
-                 execution_id: "runner-sink-#{System.unique_integer([:positive])}",
-                 engine: ScriptedEngine,
-                 event_sink: RaisingSink,
-                 control_store: PidControl,
-                 checkpoint_store: NoopCheckpoint
-               )
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert {:ok, _id} =
+                 Runner.start(scripted_spec(), %{},
+                   tenant_id: "t1",
+                   execution_id: "runner-sink-#{System.unique_integer([:positive])}",
+                   engine: ScriptedEngine,
+                   event_sink: RaisingSink,
+                   control_store: PidControl,
+                   checkpoint_store: NoopCheckpoint
+                 )
 
-      assert_receive {:init_running, runner}, 1_000
-      ref = Process.monitor(runner)
-      send(runner, :release)
-      assert_receive {:DOWN, ^ref, :process, ^runner, :normal}, 2_000
-    end)
+        assert_receive {:init_running, runner}, 1_000
+        ref = Process.monitor(runner)
+        send(runner, :release)
+        assert_receive {:DOWN, ^ref, :process, ^runner, :normal}, 2_000
+      end)
+
+    # Logged, once for the run though every event failed.
+    assert log =~ "event sink failed (sink down)"
+    assert length(String.split(log, "event sink failed")) == 2
+  end
+
+  # Round 4 F4: a throwing adapter is absorbed like a raising one.
+  defmodule ThrowingControl do
+    @moduledoc false
+    def register_execution(_execution_id, _pid, _speed), do: throw(:control_down)
+    def peek(_execution_id), do: nil
+    def get_pause_report(_execution_id), do: nil
+  end
+
+  test "a throwing control store is logged and the run starts" do
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        {result, exec_id} =
+          start_scripted({:wait, %{"kind" => "checkpoint"}}, scripted_spec(), ThrowingControl)
+
+        assert result == {:ok, exec_id}
+        assert_receive {:event, %{execution_id: ^exec_id, kind: :checkpoint}}, 1_000
+      end)
+
+    assert log =~ "adapter call failed: threw :control_down"
   end
 
   test "emits durable ordered events and supports replay from a sequence" do

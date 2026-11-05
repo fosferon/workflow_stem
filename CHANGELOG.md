@@ -17,15 +17,17 @@
   unexpected value does the same with `{:init_raised, message}`,
   `{:init_threw, value}`, `{:init_exited, reason}` or
   `{:unexpected_init_result, value}`, and an init crash never takes the
-  caller down through the link. `start/3` returns `{:error, reason}` only when the runner
-  does not report started within a second (`:runner_start_timeout`); that
-  runner is now stopped rather than left running, and its report can never
-  answer a later `start/3` from the same process.
+  caller down through the link. `start/3` returns `{:error, reason}` only
+  when the runner does not report started within a second
+  (`:runner_start_timeout`); that runner is now stopped rather than left
+  running, and its report can never answer a later `start/3` from the same
+  process.
 - A failed step whose runtime names no state is reported as step
   `"unknown"`, not `""`.
-- An event sink whose `append_event/2` or `publish_event/1` fails is
-  logged, like the other adapter calls, instead of crashing the run (and
-  its linked caller).
+- An event sink whose `append_event/2` or `publish_event/1` fails (raises,
+  throws or exits) is logged once per run instead of crashing the run and
+  its linked caller. The other adapter calls now absorb a throw too, as
+  they already did a raise or an exit.
 
 ### Fixed
 

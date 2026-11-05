@@ -48,9 +48,9 @@ defmodule WorkflowStem.Runner do
   failed and emits `:step_failed` and `:paused` with the reason, as does an
   init that raises (`{:init_raised, message}`), throws (`{:init_threw,
   value}`), exits (`{:init_exited, reason}`) or returns an unexpected value
-  (`{:unexpected_init_result, value}`). If the
-  runner does not report started within a second, it is stopped and
-  `{:error, :runner_start_timeout}` returned.
+  (`{:unexpected_init_result, value}`). If the runner does not report
+  started within a second, it is stopped and `{:error,
+  :runner_start_timeout}` returned.
   """
   @spec start(map(), map(), opts()) :: {:ok, String.t()} | {:error, term()}
   def start(spec, inputs \\ %{}, opts \\ []) when is_map(spec) and is_map(inputs) do
@@ -324,8 +324,25 @@ defmodule WorkflowStem.Runner do
     }
 
     # A sink that fails is logged, like every other adapter call; it does
-    # not crash the run, nor its caller through the link.
-    _ = safe_call(fn -> EventLog.emit(opts.event_sink, opts.tenant_id, event) end)
+    # not crash the run, nor its caller through the link. Once per run: a
+    # sink that stays down does not log every event.
+    if Process.get(:workflow_stem_sink_failed) do
+      _ = quiet_call(fn -> EventLog.emit(opts.event_sink, opts.tenant_id, event) end)
+    else
+      case try_call(fn -> EventLog.emit(opts.event_sink, opts.tenant_id, event) end) do
+        {:failed, why} ->
+          Process.put(:workflow_stem_sink_failed, true)
+
+          Logger.warning(
+            "[WorkflowStem.Runner] event sink failed (#{why}); further sink failures " <>
+              "in this run are not logged"
+          )
+
+        _emitted ->
+          :ok
+      end
+    end
+
     :ok
   end
 
@@ -410,16 +427,33 @@ defmodule WorkflowStem.Runner do
     }
   end
 
+  # Every adapter call: a raise, a throw or an exit is logged and the run
+  # goes on.
   defp safe_call(fun) do
+    case try_call(fun) do
+      {:failed, why} ->
+        Logger.warning("[WorkflowStem.Runner] adapter call failed: #{why}")
+        :ok
+
+      result ->
+        result
+    end
+  end
+
+  defp quiet_call(fun) do
+    case try_call(fun) do
+      {:failed, _why} -> :ok
+      result -> result
+    end
+  end
+
+  defp try_call(fun) do
     fun.()
   rescue
-    e ->
-      Logger.warning("[WorkflowStem.Runner] adapter call failed: #{Exception.message(e)}")
-      :ok
+    e -> {:failed, Exception.message(e)}
   catch
-    :exit, reason ->
-      Logger.warning("[WorkflowStem.Runner] adapter call exited: #{inspect(reason)}")
-      :ok
+    :throw, value -> {:failed, "threw #{inspect(value)}"}
+    :exit, reason -> {:failed, "exited #{inspect(reason)}"}
   end
 
   import Bitwise
