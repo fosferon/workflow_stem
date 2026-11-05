@@ -49,8 +49,8 @@ defmodule WorkflowStem.Runner do
   init that raises (`{:init_raised, message}`), throws (`{:init_threw,
   value}`), exits (`{:init_exited, reason}`) or returns an unexpected value
   (`{:unexpected_init_result, value}`). If the runner does not report
-  started within a second, it is stopped and `{:error,
-  :runner_start_timeout}` returned.
+  started within a second, it is stopped and the call returns
+  `{:error, :runner_start_timeout}`.
   """
   @spec start(map(), map(), opts()) :: {:ok, String.t()} | {:error, term()}
   def start(spec, inputs \\ %{}, opts \\ []) when is_map(spec) and is_map(inputs) do
@@ -303,13 +303,14 @@ defmodule WorkflowStem.Runner do
   defp emit_wait(opts, cfg), do: emit_pause(opts, cfg)
 
   defp emit_pause(opts, default) do
+    # A store that has no report, or fails to give one, leaves the default.
     report =
       case opts.control_store do
         mod when is_atom(mod) -> safe_call(fn -> mod.get_pause_report(opts.execution_id) end)
         _ -> nil
       end
 
-    emit(opts, :paused, %{report: report || default})
+    emit(opts, :paused, %{report: if(is_map(report), do: report, else: default)})
   end
 
   defp emit(opts, kind, payload) do
@@ -323,14 +324,18 @@ defmodule WorkflowStem.Runner do
         |> Map.put_new(:tenant_id, opts.tenant_id)
     }
 
-    # A sink that fails is logged, like every other adapter call; it does
-    # not crash the run, nor its caller through the link. Once per run: a
-    # sink that stays down does not log every event.
+    # A sink that fails (raises, throws, exits, or returns an error) is
+    # logged, like every other adapter call; it does not crash the run, nor
+    # its caller through the link. Once per run: a sink that stays down does
+    # not log every event.
     if Process.get(:workflow_stem_sink_failed) do
       _ = quiet_call(fn -> EventLog.emit(opts.event_sink, opts.tenant_id, event) end)
     else
       case try_call(fn -> EventLog.emit(opts.event_sink, opts.tenant_id, event) end) do
-        {:failed, why} ->
+        failure when elem(failure, 0) in [:failed, :error] ->
+          why =
+            if elem(failure, 0) == :failed, do: elem(failure, 1), else: inspect(elem(failure, 1))
+
           Process.put(:workflow_stem_sink_failed, true)
 
           Logger.warning(

@@ -93,6 +93,8 @@ defmodule WorkflowStem.RunnerTest do
           end
 
         {:wait, cfg} ->
+          # Tests that cannot learn the runner otherwise stop it with this.
+          send(Process.whereis(WorkflowStem.RunnerTest.Owner), {:init_running, self()})
           {:wait, runtime, cfg}
 
         {:error, reason} ->
@@ -124,6 +126,7 @@ defmodule WorkflowStem.RunnerTest do
 
   defmodule SlowControl do
     @moduledoc false
+    @behaviour WorkflowStem.Adapters.ControlStore
     # Registers after start/3 has stopped waiting (1 s).
     def register_execution(_execution_id, _pid, _speed), do: Process.sleep(1_500)
     def peek(_execution_id), do: nil
@@ -132,6 +135,7 @@ defmodule WorkflowStem.RunnerTest do
 
   defmodule PidControl do
     @moduledoc false
+    @behaviour WorkflowStem.Adapters.ControlStore
     def register_execution(_execution_id, pid, _speed) do
       send(Process.whereis(WorkflowStem.RunnerTest.Owner), {:runner, pid})
       :ok
@@ -376,6 +380,7 @@ defmodule WorkflowStem.RunnerTest do
   # Round 4 F4: a throwing adapter is absorbed like a raising one.
   defmodule ThrowingControl do
     @moduledoc false
+    @behaviour WorkflowStem.Adapters.ControlStore
     def register_execution(_execution_id, _pid, _speed), do: throw(:control_down)
     def peek(_execution_id), do: nil
     def get_pause_report(_execution_id), do: nil
@@ -389,9 +394,71 @@ defmodule WorkflowStem.RunnerTest do
 
         assert result == {:ok, exec_id}
         assert_receive {:event, %{execution_id: ^exec_id, kind: :checkpoint}}, 1_000
+        # The run waits at its checkpoint; it is ended with the test.
+        assert_receive {:init_running, runner}, 1_000
+        on_exit(fn -> Process.exit(runner, :kill) end)
       end)
 
     assert log =~ "adapter call failed: threw :control_down"
+  end
+
+  # Round 5 F4/F5: a sink's error return is logged once; a failed pause
+  # report leaves the default report.
+  defmodule ErrorSink do
+    @moduledoc false
+    @behaviour WorkflowStem.Adapters.EventSink
+    def append_event(_tenant, _event), do: {:error, :disk_full}
+    def publish_event(_event), do: :ok
+    def replay(_tenant, _id, _opts), do: {:ok, []}
+  end
+
+  defmodule FailingReportControl do
+    @moduledoc false
+    @behaviour WorkflowStem.Adapters.ControlStore
+    def register_execution(_execution_id, _pid, _speed), do: :ok
+    def peek(_execution_id), do: nil
+    def get_pause_report(_execution_id), do: raise("no report")
+  end
+
+  test "a sink that returns an error is logged once for the run" do
+    Application.put_env(:workflow_stem, :scripted_init, {:block, self()})
+    on_exit(fn -> Application.delete_env(:workflow_stem, :scripted_init) end)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        {:ok, _} =
+          Runner.start(scripted_spec(), %{},
+            tenant_id: "t1",
+            execution_id: "runner-errsink-#{System.unique_integer([:positive])}",
+            engine: ScriptedEngine,
+            event_sink: ErrorSink,
+            control_store: NoopControl,
+            checkpoint_store: NoopCheckpoint
+          )
+
+        assert_receive {:init_running, runner}, 1_000
+        ref = Process.monitor(runner)
+        send(runner, :release)
+        assert_receive {:DOWN, ^ref, :process, ^runner, :normal}, 2_000
+      end)
+
+    assert log =~ "event sink failed (:disk_full)"
+    assert length(String.split(log, "event sink failed")) == 2
+  end
+
+  test "a control store that fails to give a pause report leaves the default" do
+    ExUnit.CaptureLog.capture_log(fn ->
+      {{:ok, _}, exec_id} =
+        start_scripted({:error, :bad_spec}, scripted_spec(), FailingReportControl)
+
+      assert_receive {:event,
+                      %{
+                        execution_id: ^exec_id,
+                        kind: :paused,
+                        payload: %{report: %{reason: :bad_spec}}
+                      }},
+                     1_000
+    end)
   end
 
   test "emits durable ordered events and supports replay from a sequence" do
