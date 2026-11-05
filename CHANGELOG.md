@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.5.0 (unreleased) — The first step runs in the runner
+
+### Changed
+
+- **`WorkflowStem.Runner.start/3` no longer runs the first step in the
+  caller.** It returns `{:ok, execution_id}` once the runner process is
+  registered with the control store and has emitted `:started`; the
+  engine's `init/2`, which runs the initial state's entry action, now runs
+  in the runner. A long first step no longer blocks the caller, and a host
+  that follows the run's events sees them from the start.
+- **Init errors arrive as events, not as `start/3`'s return value.** A spec
+  the engine refuses (`{:error, reason}`) or an entry action that fails
+  marks the run failed and emits `:step_failed` (with the reason) and
+  `:paused`; an `init/2` that raises does the same with
+  `{:init_raised, message}`. `start/3` returns `{:error, reason}` only when
+  the runner does not report started within a second
+  (`:runner_start_timeout`); that runner is now stopped rather than left
+  running.
+
+### Fixed
+
+- **A first step that waits.** An initial state whose entry action returns
+  `{:wait, runtime, cfg}` (a checkpoint as the first step) raised a
+  `CaseClauseError` in the caller. It now waits like any later step: it
+  emits `:step_started`, is checkpointed, emits its wait (`:checkpoint` or
+  `:paused`) and resumes on `{:resume, payload}`.
+
 ## v0.4.0 (August 15, 2026) — Full ALF routing emission
 
 ### Added

@@ -22,7 +22,7 @@ Add `workflow_stem` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:workflow_stem, "~> 0.4.0"}
+    {:workflow_stem, "~> 0.5.0"}
   ]
 end
 ```
@@ -103,6 +103,12 @@ alias WorkflowStem.Runner
     checkpoint_store: MyApp.CheckpointStore
   )
 ```
+
+`start/3` returns once the runner process is registered and has emitted
+`:started`. The first step runs in that process, so a long first step never
+blocks the caller, and everything from the first step on, an init failure
+included, arrives as events (a failed init emits `:step_failed` and
+`:paused`).
 
 Events are appended durably first, then published for live subscribers. Late
 subscribers replay through the same `EventSink`:

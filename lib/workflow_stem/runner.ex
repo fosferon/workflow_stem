@@ -5,6 +5,12 @@ defmodule WorkflowStem.Runner do
   The runner owns the FSM walk, wait/resume loop, control checks, checkpoint
   hooks, and canonical event emission. Hosts provide persistence, live
   publication, and control-state implementations through adapter modules.
+
+  `start/3` returns as soon as the runner process is registered and has
+  emitted `:started`; the engine's `init/2`, which runs the first step's
+  entry action, runs in that process, not in the caller. Everything that
+  happens from the first step on, an init failure included, arrives as
+  events.
   """
 
   require Logger
@@ -26,33 +32,32 @@ defmodule WorkflowStem.Runner do
           metadata: map()
         ]
 
+  @doc """
+  Starts a run of `spec` and returns `{:ok, execution_id}` once its runner
+  process is registered with the control store and has emitted `:started`.
+
+  The runner then calls the engine's `init/2` (the first step's entry
+  action) itself, so a long first step never blocks the caller. Its outcome
+  arrives as events: an initial state that is ready runs on; one that waits
+  is checkpointed and emits its wait (`:checkpoint` or `:paused`) like any
+  later step; an init error, the entry action's or the spec's, marks the run
+  failed and emits `:step_failed` and `:paused` with the reason. If the
+  runner does not report started within a second, it is stopped and
+  `{:error, :runner_start_timeout}` returned.
+  """
   @spec start(map(), map(), opts()) :: {:ok, String.t()} | {:error, term()}
   def start(spec, inputs \\ %{}, opts \\ []) when is_map(spec) and is_map(inputs) do
     execution_id = Keyword.get_lazy(opts, :execution_id, &uuid4/0)
     tenant_id = Keyword.get(opts, :tenant_id, "default")
     engine = Keyword.get(opts, :engine, Engine)
 
-    init_result =
-      engine.init(spec, %{
-        tenant_id: tenant_id,
-        execution_id: execution_id,
-        initial_context: inputs
-      })
+    init_context = %{tenant_id: tenant_id, execution_id: execution_id, initial_context: inputs}
 
-    case init_result do
-      {:ok, runtime} ->
-        start_runner_task(runtime, opts_for(opts, execution_id, tenant_id, engine), :ok)
-
-      {:error, {:initial_entry_action_failed, reason, runtime}} ->
-        start_runner_task(
-          runtime,
-          opts_for(opts, execution_id, tenant_id, engine),
-          {:init_error, reason}
-        )
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    start_runner_task(
+      {spec, init_context},
+      opts_for(opts, execution_id, tenant_id, engine),
+      :init
+    )
   end
 
   @spec start_from_runtime(map(), opts()) :: {:ok, String.t()} | {:error, term()}
@@ -88,32 +93,77 @@ defmodule WorkflowStem.Runner do
     }
   end
 
-  defp start_runner_task(runtime, opts, init_status) do
+  defp start_runner_task(runtime_or_init, opts, init_status) do
     parent = self()
 
-    {:ok, _task} =
+    {:ok, task} =
       Task.start_link(fn ->
         register_execution(opts)
         emit(opts, if(init_status == :restored, do: :restored, else: :started), %{})
         send(parent, {:runner_started, opts.execution_id})
 
         case init_status do
-          :ok ->
-            emit_state_events(opts, runtime)
-            loop(runtime, opts, %{})
+          :init ->
+            {spec, init_context} = runtime_or_init
+            init_in_runner(spec, init_context, opts)
 
           :restored ->
-            loop(runtime, opts, %{})
-
-          {:init_error, reason} ->
-            handle_init_error(opts, runtime, reason)
+            loop(runtime_or_init, opts, %{})
         end
       end)
 
     receive do
-      {:runner_started, execution_id} -> {:ok, execution_id}
+      {:runner_started, execution_id} ->
+        {:ok, execution_id}
     after
-      1_000 -> {:error, :runner_start_timeout}
+      1_000 ->
+        # A runner that never reported started is stopped, not left running
+        # behind an error the caller sees.
+        Process.unlink(task)
+        Process.exit(task, :kill)
+        {:error, :runner_start_timeout}
+    end
+  end
+
+  # The engine's init runs the initial state's entry action (the first step),
+  # here in the runner rather than in start/3's caller.
+  defp init_in_runner(spec, init_context, opts) do
+    case safe_init(opts.engine, spec, init_context) do
+      {:ok, runtime} ->
+        emit_state_events(opts, runtime)
+        loop(runtime, opts, %{})
+
+      {:wait, runtime, wait_cfg} ->
+        emit_step_started(opts, step_for_runtime(runtime), runtime)
+        wait_at(runtime, opts, wait_cfg)
+
+      {:error, {:initial_entry_action_failed, reason, runtime}} ->
+        handle_init_error(opts, runtime, reason)
+
+      {:error, reason} ->
+        handle_init_error(opts, spec_runtime(spec), reason)
+    end
+  end
+
+  defp safe_init(engine, spec, init_context) do
+    engine.init(spec, init_context)
+  rescue
+    error -> {:error, {:init_raised, Exception.message(error)}}
+  end
+
+  # A runtime-shaped map for reporting a spec that did not initialise: its
+  # initial state, so the failure names the step it could not enter.
+  defp spec_runtime(spec) do
+    %{current_state: Map.get(spec, :initial_state), spec: spec, context: %{}}
+  end
+
+  defp wait_at(runtime, opts, wait_cfg) do
+    checkpoint(opts, runtime, wait_cfg)
+    emit_wait(opts, wait_cfg)
+
+    case wait_for_resume() do
+      {:resume, resume_payload} -> loop(runtime, opts, resume_payload)
+      :abort -> mark_status(opts, "aborted") && emit(opts, :aborted, %{})
     end
   end
 
@@ -161,13 +211,7 @@ defmodule WorkflowStem.Runner do
           emit_step_started(opts, step_for_runtime(new_runtime), new_runtime)
         end
 
-        checkpoint(opts, new_runtime, wait_cfg)
-        emit_wait(opts, wait_cfg)
-
-        case wait_for_resume() do
-          {:resume, resume_payload} -> loop(new_runtime, opts, resume_payload)
-          :abort -> mark_status(opts, "aborted") && emit(opts, :aborted, %{})
-        end
+        wait_at(new_runtime, opts, wait_cfg)
 
       {:error, reason, failed_runtime} ->
         step = step_for_runtime(failed_runtime)
