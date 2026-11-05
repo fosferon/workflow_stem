@@ -103,12 +103,16 @@ defmodule WorkflowStem.Runner do
   defp start_runner_task(runtime_or_init, opts, init_status) do
     parent = self()
     execution_id = opts.execution_id
+    # Each start's report carries its own reference: a report that arrives
+    # after its start gave up can answer no other start, the same run id
+    # started again included.
+    ref = make_ref()
 
     {:ok, task} =
       Task.start_link(fn ->
         register_execution(opts)
         emit(opts, if(init_status == :restored, do: :restored, else: :started), %{})
-        send(parent, {:runner_started, opts.execution_id})
+        send(parent, {:runner_started, ref, opts.execution_id})
 
         case init_status do
           :init ->
@@ -120,10 +124,9 @@ defmodule WorkflowStem.Runner do
         end
       end)
 
-    # Only this run's own report counts: a late report from a run that timed
-    # out earlier can never answer for this one.
+    # Only this start's own report counts (its ref).
     receive do
-      {:runner_started, ^execution_id} ->
+      {:runner_started, ^ref, ^execution_id} ->
         {:ok, execution_id}
     after
       @runner_start_timeout ->
@@ -134,7 +137,7 @@ defmodule WorkflowStem.Runner do
         Process.exit(task, :kill)
 
         receive do
-          {:runner_started, ^execution_id} -> :ok
+          {:runner_started, ^ref, ^execution_id} -> :ok
         after
           0 -> :ok
         end

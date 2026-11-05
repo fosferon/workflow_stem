@@ -79,7 +79,7 @@ defmodule WorkflowStem.RunnerTest do
     def init(spec, ctx) do
       runtime = %{
         spec: spec,
-        current_state: spec.initial_state,
+        current_state: Map.get(spec, :initial_state) || Map.get(spec, "initial_state"),
         execution_id: ctx.execution_id,
         context: %{}
       }
@@ -276,14 +276,22 @@ defmodule WorkflowStem.RunnerTest do
     {{:ok, _}, exec_id} = start_scripted({:error, :bad_spec}, string_keyed)
 
     assert_receive {:event,
-                    %{execution_id: ^exec_id, kind: :step_failed, payload: %{step_id: "first"}}},
+                    %{
+                      execution_id: ^exec_id,
+                      kind: :step_failed,
+                      payload: %{step_id: "first", reason: :bad_spec}
+                    }},
                    1_000
 
     nameless = Map.delete(scripted_spec(), :initial_state)
     {{:ok, _}, exec_id} = start_scripted({:error, :bad_spec}, nameless)
 
     assert_receive {:event,
-                    %{execution_id: ^exec_id, kind: :step_failed, payload: %{step_id: "unknown"}}},
+                    %{
+                      execution_id: ^exec_id,
+                      kind: :step_failed,
+                      payload: %{step_id: "unknown", reason: :bad_spec}
+                    }},
                    1_000
   end
 
@@ -301,11 +309,11 @@ defmodule WorkflowStem.RunnerTest do
   end
 
   test "a stale started report from another run never answers this start" do
-    send(self(), {:runner_started, "some-earlier-run"})
+    send(self(), {:runner_started, make_ref(), "some-earlier-run"})
     {result, exec_id} = start_scripted({:wait, %{"kind" => "checkpoint", "display" => "x"}})
 
     assert result == {:ok, exec_id}
-    assert_received {:runner_started, "some-earlier-run"}
+    assert_received {:runner_started, _ref, "some-earlier-run"}
   end
 
   test "emits durable ordered events and supports replay from a sequence" do
@@ -331,8 +339,13 @@ defmodule WorkflowStem.RunnerTest do
                checkpoint_store: NoopCheckpoint
              )
 
+    # The real engine: :started (seq 1) comes before the first step's events.
     assert_receive {:event, %{kind: :started, seq: 1}}, 1_000
-    assert_receive {:event, %{kind: :step_started, payload: %{step_id: "first"}}}, 1_000
+
+    assert_receive {:event, %{kind: :step_started, seq: step_seq, payload: %{step_id: "first"}}},
+                   1_000
+
+    assert step_seq > 1
     assert_receive {:event, %{kind: :completed}}, 1_000
 
     assert {:ok, events} = Runner.replay(MemorySink, "t1", exec_id, since_seq: 1)
