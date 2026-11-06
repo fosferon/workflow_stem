@@ -31,8 +31,7 @@ defmodule WorkflowStem.Persistence do
   def enabled? do
     mod = adapter()
 
-    is_atom(mod) and not is_nil(mod) and Code.ensure_loaded?(mod) and
-      function_exported?(mod, :save_execution, 2)
+    is_atom(mod) and Code.ensure_loaded?(mod) and function_exported?(mod, :save_execution, 2)
   end
 
   @spec save_execution(String.t(), map()) :: {:ok, term()} | {:error, term()}
