@@ -130,8 +130,10 @@ defmodule WorkflowStem.Engines.FlowEngine do
         context: Map.get(checkpoint, :context) || Map.get(checkpoint, "context") || %{},
         artifacts: Map.get(checkpoint, :artifacts) || Map.get(checkpoint, "artifacts") || %{},
         trace: Map.get(checkpoint, :trace) || Map.get(checkpoint, "trace") || [],
-        blocked_reasons: Map.get(checkpoint, :blocked_reasons) || Map.get(checkpoint, "blocked_reasons") || %{},
-        breakpoint_hits: Map.get(checkpoint, :breakpoint_hits) || Map.get(checkpoint, "breakpoint_hits") || [],
+        blocked_reasons:
+          Map.get(checkpoint, :blocked_reasons) || Map.get(checkpoint, "blocked_reasons") || %{},
+        breakpoint_hits:
+          Map.get(checkpoint, :breakpoint_hits) || Map.get(checkpoint, "breakpoint_hits") || [],
         last_event: Map.get(checkpoint, :last_event) || Map.get(checkpoint, "last_event"),
         last_result: Map.get(checkpoint, :last_result) || Map.get(checkpoint, "last_result")
       }

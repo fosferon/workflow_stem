@@ -65,7 +65,9 @@ defmodule WorkflowStem.RegistryInstanceTest do
 
   describe "ensure_instance/2 — routed specs" do
     test "compiles and returns a per-agent module on first call" do
-      assert {:ok, mod} = Registry.ensure_instance("agent-a", "registry-test-routed", routed_spec())
+      assert {:ok, mod} =
+               Registry.ensure_instance("agent-a", "registry-test-routed", routed_spec())
+
       assert is_atom(mod)
       assert to_string(mod) =~ "WorkflowStem.Generated.agent_a.registry_test_routed"
       assert Registry.instance_module("agent-a", "registry-test-routed") == mod

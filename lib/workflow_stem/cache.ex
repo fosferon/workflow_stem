@@ -40,7 +40,8 @@ defmodule WorkflowStem.Cache do
     end
   end
 
-  @spec put({Types.tenant_id(), Types.workflow_handle(), Types.artifact_hash()}, Types.ir()) :: :ok
+  @spec put({Types.tenant_id(), Types.workflow_handle(), Types.artifact_hash()}, Types.ir()) ::
+          :ok
   def put(key, ir) when is_map(ir) do
     ensure_started()
     true = :ets.insert(@table, {key, ir})

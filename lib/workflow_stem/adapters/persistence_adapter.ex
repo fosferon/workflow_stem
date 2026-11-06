@@ -8,11 +8,11 @@ defmodule WorkflowStem.Adapters.PersistenceAdapter do
   alias WorkflowStem.Types
 
   @callback save_execution(Types.tenant_id(), map()) :: {:ok, map()} | {:error, term()}
-  @callback get_execution(Types.tenant_id(), Types.execution_id()) :: {:ok, map()} | {:error, term()}
+  @callback get_execution(Types.tenant_id(), Types.execution_id()) ::
+              {:ok, map()} | {:error, term()}
 
   @callback save_checkpoint(Types.tenant_id(), Types.execution_id(), map()) ::
               {:ok, map()} | {:error, term()}
 
   @callback list_executions(Types.tenant_id(), map()) :: {:ok, [map()]} | {:error, term()}
 end
-

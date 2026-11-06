@@ -30,7 +30,8 @@ defmodule WorkflowStem.Components.FsmGuard do
     end
   end
 
-  def call(event, _opts), do: Map.put(event, :status, :error) |> Map.put(:error, :invalid_event_shape)
+  def call(event, _opts),
+    do: Map.put(event, :status, :error) |> Map.put(:error, :invalid_event_shape)
 
   defp allowed?(spec, current_state, event_name) do
     transitions = Map.get(spec, :transitions) || %{}
@@ -69,6 +70,7 @@ defmodule WorkflowStem.Components.FsmGuard do
   defp equivalent_state?(_a, _b), do: false
 
   defp normalize_event_key(event) when is_atom(event), do: event
+
   defp normalize_event_key(event) when is_binary(event) do
     try do
       String.to_existing_atom(event)

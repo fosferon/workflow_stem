@@ -8,4 +8,3 @@ defmodule WorkflowStem.Artifacts do
   defdelegate normalize(artifacts), to: Mobus.Stepwise.Artifacts
   defdelegate merge(existing, incoming), to: Mobus.Stepwise.Artifacts
 end
-

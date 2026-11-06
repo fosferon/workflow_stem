@@ -62,7 +62,12 @@ defmodule WorkflowStem.FsmRuntimeTest do
     end
 
     test "allows runtime_context initial_state override" do
-      context = %{tenant_id: "t1", execution_id: "fsm-3", sync: true, initial_state: :pending_review}
+      context = %{
+        tenant_id: "t1",
+        execution_id: "fsm-3",
+        sync: true,
+        initial_state: :pending_review
+      }
 
       assert {:ok, runtime} = FsmEngine.init(@fsm_spec, context)
       assert runtime.current_state == :pending_review

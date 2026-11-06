@@ -214,7 +214,9 @@ defmodule WorkflowStem.StepwiseEngineTest do
     end
 
     test "delegates chat_message to conversation handler", %{runtime: runtime} do
-      assert {:ok, updated} = StepwiseEngine.handle_event(runtime, :chat_message, %{"message" => "hello"})
+      assert {:ok, updated} =
+               StepwiseEngine.handle_event(runtime, :chat_message, %{"message" => "hello"})
+
       assert get_in(updated, [:context, "conversation_response"]) != nil
     end
 
@@ -293,7 +295,9 @@ defmodule WorkflowStem.StepwiseEngineTest do
       assert Map.get(restored, :context)["data"] == "pre-checkpoint"
 
       # handle_event on the restored runtime
-      {:ok, after_restore} = StepwiseEngine.handle_event(restored, :next, %{"data" => "post-restore"})
+      {:ok, after_restore} =
+        StepwiseEngine.handle_event(restored, :next, %{"data" => "post-restore"})
+
       assert after_restore.current_state == :review
 
       # Verify projection type is correct (WorkflowStem.Projection, not Mobus.Stepwise.Projection)

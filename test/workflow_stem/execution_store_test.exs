@@ -15,6 +15,7 @@ defmodule WorkflowStem.ExecutionStoreTest do
         _ -> :ok
       end
     end)
+
     :ok
   end
 
@@ -67,9 +68,10 @@ defmodule WorkflowStem.ExecutionStoreTest do
 
       :ok = ExecutionStore.put(entry)
 
-      assert {:ok, updated} = ExecutionStore.update("test-exec-1", fn e ->
-        {:ok, put_in(e, [:runtime, :current_state], :step_2)}
-      end)
+      assert {:ok, updated} =
+               ExecutionStore.update("test-exec-1", fn e ->
+                 {:ok, put_in(e, [:runtime, :current_state], :step_2)}
+               end)
 
       assert updated.runtime.current_state == :step_2
     end
@@ -89,9 +91,10 @@ defmodule WorkflowStem.ExecutionStoreTest do
 
       :ok = ExecutionStore.put(entry)
 
-      assert {:error, :validation_failed} = ExecutionStore.update("test-exec-1", fn _e ->
-        {:error, :validation_failed}
-      end)
+      assert {:error, :validation_failed} =
+               ExecutionStore.update("test-exec-1", fn _e ->
+                 {:error, :validation_failed}
+               end)
     end
   end
 

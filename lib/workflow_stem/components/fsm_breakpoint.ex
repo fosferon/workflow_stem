@@ -8,4 +8,3 @@ defmodule WorkflowStem.Components.FsmBreakpoint do
 
   defdelegate call(event, opts), to: Mobus.Stepwise.Components.FsmBreakpoint
 end
-

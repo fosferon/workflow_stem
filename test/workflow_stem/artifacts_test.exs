@@ -18,9 +18,10 @@ defmodule WorkflowStem.ArtifactsTest do
     end
 
     test "normalizes structured entry" do
-      result = Artifacts.normalize(%{
-        "report" => %{kind: "pdf", version: 2, data: %{url: "http://example.com"}}
-      })
+      result =
+        Artifacts.normalize(%{
+          "report" => %{kind: "pdf", version: 2, data: %{url: "http://example.com"}}
+        })
 
       assert %{"report" => entry} = result
       assert entry["kind"] == "pdf"
@@ -29,9 +30,10 @@ defmodule WorkflowStem.ArtifactsTest do
     end
 
     test "preserves meta field" do
-      result = Artifacts.normalize(%{
-        "doc" => %{kind: "doc", data: "content", meta: %{source: "upload"}}
-      })
+      result =
+        Artifacts.normalize(%{
+          "doc" => %{kind: "doc", data: "content", meta: %{source: "upload"}}
+        })
 
       assert %{"doc" => entry} = result
       assert entry["meta"] == %{source: "upload"}

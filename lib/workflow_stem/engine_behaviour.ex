@@ -27,4 +27,3 @@ defmodule WorkflowStem.EngineBehaviour do
   @callback restore(Types.spec(), map(), Types.runtime_context()) ::
               {:ok, Types.runtime()} | {:error, Types.reason()}
 end
-

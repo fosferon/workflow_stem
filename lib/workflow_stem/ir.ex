@@ -70,4 +70,3 @@ defmodule WorkflowStem.IR do
     Map.put(spec, :routing, routing)
   end
 end
-

@@ -5,7 +5,13 @@ defmodule WorkflowStem.FsmActionTest do
 
   setup do
     original = Application.get_env(:workflow_stem, :capability_runner_adapter)
-    Application.put_env(:workflow_stem, :capability_runner_adapter, WorkflowStem.TestCapabilityRunner)
+
+    Application.put_env(
+      :workflow_stem,
+      :capability_runner_adapter,
+      WorkflowStem.TestCapabilityRunner
+    )
+
     on_exit(fn -> Application.put_env(:workflow_stem, :capability_runner_adapter, original) end)
     :ok
   end
@@ -32,7 +38,11 @@ defmodule WorkflowStem.FsmActionTest do
 
       result = FsmAction.call(event, %{})
       assert result.status == :ok
-      assert result.runtime.context["personal_info"] == %{"name" => "Alice", "email" => "alice@example.com"}
+
+      assert result.runtime.context["personal_info"] == %{
+               "name" => "Alice",
+               "email" => "alice@example.com"
+             }
     end
 
     test "saves without key when key is nil" do

@@ -14,4 +14,3 @@ defmodule WorkflowStem.Adapters.NotificationAdapter do
 
   @callback notify_breakpoint(Types.tenant_id(), map()) :: {:ok, term()} | {:error, term()}
 end
-
