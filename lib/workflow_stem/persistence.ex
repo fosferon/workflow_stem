@@ -1,5 +1,14 @@
 defmodule WorkflowStem.Persistence do
-  @moduledoc false
+  @moduledoc """
+  Persistence adapter facade for workflow executions and checkpoints.
+
+  Reads the adapter module from `:workflow_stem, :persistence_adapter`
+  (a module implementing `WorkflowStem.Adapters.PersistenceAdapter`).
+  With no adapter configured, persistence is disabled: `save_execution/2`
+  returns `{:ok, :skipped}` and reads return `{:error, :persistence_disabled}`.
+
+      config :workflow_stem, persistence_adapter: MyApp.WorkflowPersistence
+  """
 
   @spec adapter() :: module() | nil
   def adapter do

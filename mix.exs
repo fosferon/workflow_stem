@@ -66,11 +66,38 @@ defmodule WorkflowStem.MixProject do
           WorkflowStem.Adapters.PersistenceAdapter,
           WorkflowStem.Adapters.ProcessController
         ],
-        Engines: ~r"^WorkflowStem.Engines",
-        Pipelines: ~r"^WorkflowStem.Pipelines",
+        Engines: [
+          WorkflowStem.EngineBehaviour,
+          WorkflowStem.Engines.FlowEngine,
+          WorkflowStem.Engines.FsmEngine,
+          WorkflowStem.Engines.StepwiseEngine
+        ],
+        Pipelines: [
+          WorkflowStem.Pipeline.Builder,
+          WorkflowStem.Pipelines.Flow,
+          WorkflowStem.Pipelines.Fsm,
+          WorkflowStem.Pipelines.Stepwise
+        ],
+        Components: ~r"^WorkflowStem\.Components\.",
         Runner: [
           WorkflowStem.Runner,
-          WorkflowStem.EventLog
+          WorkflowStem.EventLog,
+          WorkflowStem.ExecutionStore,
+          WorkflowStem.Artifacts,
+          WorkflowStem.Capabilities,
+          WorkflowStem.Persistence,
+          WorkflowStem.Application
+        ],
+        "Specs and Compilation": [
+          WorkflowStem.SpecBehaviour,
+          WorkflowStem.Loader,
+          WorkflowStem.Compiler,
+          WorkflowStem.Compiler.Resolvers,
+          WorkflowStem.IR,
+          WorkflowStem.Registry,
+          WorkflowStem.Cache,
+          WorkflowStem.Projection,
+          WorkflowStem.Types
         ]
       ]
     ]

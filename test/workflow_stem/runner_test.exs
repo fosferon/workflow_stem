@@ -66,7 +66,7 @@ defmodule WorkflowStem.RunnerTest do
     :ok
   end
 
-  # GC-6958: the engine's init (the first step's entry action) runs in the
+  # The engine's init (the first step's entry action) runs in the
   # runner, not in start/3's caller; its outcome arrives as events.
   defmodule ScriptedEngine do
     @moduledoc false
