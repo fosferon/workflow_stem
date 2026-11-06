@@ -4,8 +4,12 @@ defmodule WorkflowStem.Persistence do
 
   Reads the adapter module from `:workflow_stem, :persistence_adapter`
   (a module implementing `WorkflowStem.Adapters.PersistenceAdapter`).
-  With no adapter configured, persistence is disabled: `save_execution/2`
-  returns `{:ok, :skipped}` and reads return `{:error, :persistence_disabled}`.
+  With no adapter configured, persistence is disabled:
+
+    * `save_execution/2` and `save_checkpoint/3` return `{:ok, :skipped}`;
+    * `get_execution/2` returns `{:error, :persistence_disabled}`;
+    * `list_executions/2` returns `{:ok, []}` — indistinguishable from a
+      tenant with no executions, so check `enabled?/0` when that matters.
 
       config :workflow_stem, persistence_adapter: MyApp.WorkflowPersistence
   """
