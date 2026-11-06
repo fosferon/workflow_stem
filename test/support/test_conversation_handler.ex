@@ -10,7 +10,7 @@ defmodule WorkflowStem.TestConversationHandler do
   @behaviour WorkflowStem.Adapters.ConversationHandler
 
   @impl true
-  def handle_conversation(event, runtime, trigger, payload, action_config) do
+  def handle_conversation(event, runtime, trigger, _payload, action_config) do
     context = Map.get(runtime, :context, %{})
 
     response =

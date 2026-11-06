@@ -80,7 +80,7 @@ runtime_context = %{
 
 {:ok, runtime} = StepwiseEngine.init(spec, runtime_context)
 {:ok, runtime} =
-  StepwiseEngine.handle_event(runtime, :step_one_complete, %{input: "Leonidas"})
+  StepwiseEngine.handle_event(runtime, :step_one_complete, %{input: "Ada"})
 ```
 
 ## Runner

@@ -53,7 +53,7 @@ defmodule WorkflowStem.MixProject do
       main: "readme",
       source_ref: "v#{@version}",
       source_url_pattern: "#{@source_url}/blob/v#{@version}/{path}#L{line}",
-      extras: ["README.md"],
+      extras: ["README.md", "CHANGELOG.md"],
       groups_for_modules: [
         Adapters: [
           WorkflowStem.Adapters.CapabilityRunner,
