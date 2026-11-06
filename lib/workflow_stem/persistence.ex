@@ -11,7 +11,11 @@ defmodule WorkflowStem.Persistence do
     * `list_executions/2` returns `{:ok, []}` — indistinguishable from a
       tenant with no executions, so check `enabled?/0` when that matters.
 
-      config :workflow_stem, persistence_adapter: MyApp.WorkflowPersistence
+  Configure an adapter with:
+
+  ```elixir
+  config :workflow_stem, persistence_adapter: MyApp.WorkflowPersistence
+  ```
   """
 
   @spec adapter() :: module() | nil
@@ -19,9 +23,16 @@ defmodule WorkflowStem.Persistence do
     Application.get_env(:workflow_stem, :persistence_adapter)
   end
 
+  @doc """
+  Returns `true` when a configured adapter module implements
+  `save_execution/2`. Loads the adapter module if it is not loaded yet.
+  """
   @spec enabled?() :: boolean()
   def enabled? do
-    is_atom(adapter()) and function_exported?(adapter(), :save_execution, 2)
+    mod = adapter()
+
+    is_atom(mod) and not is_nil(mod) and Code.ensure_loaded?(mod) and
+      function_exported?(mod, :save_execution, 2)
   end
 
   @spec save_execution(String.t(), map()) :: {:ok, term()} | {:error, term()}
