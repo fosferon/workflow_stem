@@ -41,6 +41,17 @@ defmodule WorkflowStem.PersistenceTest do
       use_adapter(StubAdapter)
       assert Persistence.enabled?()
     end
+
+    test "loads a configured adapter that is not loaded yet" do
+      mod = WorkflowStem.TestPersistenceAdapter
+      :code.purge(mod)
+      :code.delete(mod)
+      refute function_exported?(mod, :save_execution, 2)
+
+      use_adapter(mod)
+      assert Persistence.enabled?()
+      assert function_exported?(mod, :save_execution, 2)
+    end
   end
 
   describe "with persistence disabled" do
@@ -63,8 +74,23 @@ defmodule WorkflowStem.PersistenceTest do
     end
   end
 
-  test "a configured adapter receives the call" do
-    use_adapter(StubAdapter)
-    assert Persistence.save_execution("t1", %{id: "e1"}) == {:ok, %{id: "e1"}}
+  describe "with an adapter configured" do
+    setup do
+      use_adapter(WorkflowStem.TestPersistenceAdapter)
+      :ok
+    end
+
+    test "each call reaches the adapter" do
+      assert Persistence.save_execution("t1", %{id: "e1"}) ==
+               {:ok, %{tenant: "t1", saved: %{id: "e1"}}}
+
+      assert Persistence.get_execution("t1", "e1") == {:ok, %{tenant: "t1", id: "e1"}}
+
+      assert Persistence.save_checkpoint("t1", "e1", %{step: 2}) ==
+               {:ok, %{tenant: "t1", id: "e1", checkpoint: %{step: 2}}}
+
+      assert Persistence.list_executions("t1", %{limit: 5}) ==
+               {:ok, [%{tenant: "t1", opts: %{limit: 5}}]}
+    end
   end
 end

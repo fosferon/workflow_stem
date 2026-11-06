@@ -3,7 +3,8 @@ defmodule WorkflowStem.Persistence do
   Persistence adapter facade for workflow executions and checkpoints.
 
   Reads the adapter module from `:workflow_stem, :persistence_adapter`
-  (a module implementing `WorkflowStem.Adapters.PersistenceAdapter`).
+  (a module implementing `WorkflowStem.Adapters.PersistenceAdapter`; the value
+  must be a module name or `nil`).
   With no adapter configured, persistence is disabled:
 
     * `save_execution/2` and `save_checkpoint/3` return `{:ok, :skipped}`;
