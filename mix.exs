@@ -33,7 +33,7 @@ defmodule WorkflowStem.MixProject do
     [
       {:alf, "~> 0.12"},
       {:jason, "~> 1.4"},
-      {:mobus_stepwise, "~> 0.3"},
+      {:mobus_stepwise, "~> 0.3.0"},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false}
     ]
   end

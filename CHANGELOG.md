@@ -32,11 +32,6 @@
 - A control store that fails to give a pause report leaves the default
   report (it used to be `:ok`).
 
-### Dependencies
-
-- Requires `mobus_stepwise ~> 0.3` (was `~> 0.2.0`), so the stepwise and
-  flow engine can take the current 0.3.x line.
-
 ### Fixed
 
 - **A first step that waits.** An initial state whose entry action returns
@@ -44,6 +39,15 @@
   `CaseClauseError` in the caller. It now waits like any later step: it
   emits `:step_started`, is checkpointed, emits its wait (`:checkpoint` or
   `:paused`) and resumes on `{:resume, payload}`.
+- **A spec without a profile.** A spec with no `:profile` (or
+  `profile: nil`) no longer raises a `KeyError` with `mobus_stepwise` 0.3;
+  it defaults to `:stepwise`. An unsupported profile returns
+  `{:error, {:unsupported_profile, profile}}` instead of raising.
+
+### Dependencies
+
+- Requires `mobus_stepwise ~> 0.3.0` (was `~> 0.2.0`), so the stepwise
+  engine runs on the 0.3.x line.
 
 ## v0.4.0 (August 15, 2026) — Full ALF routing emission
 
