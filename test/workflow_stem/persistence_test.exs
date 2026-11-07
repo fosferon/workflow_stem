@@ -45,7 +45,7 @@ defmodule WorkflowStem.PersistenceTest do
     test "loads a configured adapter that is not loaded yet" do
       mod = WorkflowStem.TestPersistenceAdapter
       # Reload even if an assertion below fails, so later tests find it loaded.
-      on_exit(fn -> Code.ensure_loaded(mod) end)
+      on_exit(fn -> {:module, ^mod} = Code.ensure_loaded(mod) end)
       :code.purge(mod)
       :code.delete(mod)
       refute function_exported?(mod, :save_execution, 2)
