@@ -97,6 +97,33 @@ defmodule WorkflowStem.StepwiseEngineTest do
       assert runtime.context == %{"user_name" => "Alice"}
     end
 
+    test "defaults a missing profile to :stepwise" do
+      spec = Map.delete(@basic_spec, :profile)
+      context = %{tenant_id: "t1", execution_id: "exec-no-profile", sync: true}
+
+      assert {:ok, runtime} = StepwiseEngine.init(spec, context)
+      assert runtime.profile == :stepwise
+      assert runtime.projection.profile == :stepwise
+    end
+
+    test "defaults profile: nil to :stepwise" do
+      spec = Map.put(@basic_spec, :profile, nil)
+      context = %{tenant_id: "t1", execution_id: "exec-nil-profile", sync: true}
+
+      assert {:ok, runtime} = StepwiseEngine.init(spec, context)
+      assert runtime.profile == :stepwise
+      assert runtime.projection.profile == :stepwise
+    end
+
+    test "returns an error tuple for an unsupported profile" do
+      context = %{tenant_id: "t1", execution_id: "exec-bad-profile", sync: true}
+
+      for profile <- [:fsm, "wizard"] do
+        spec = Map.put(@basic_spec, :profile, profile)
+        assert {:error, {:unsupported_profile, ^profile}} = StepwiseEngine.init(spec, context)
+      end
+    end
+
     test "initializes with conversation spec — entry action fires" do
       context = %{tenant_id: "t1", execution_id: "exec-conv-1", sync: true}
 
@@ -269,6 +296,25 @@ defmodule WorkflowStem.StepwiseEngineTest do
       assert restored.current_state == :problem_solving
     end
 
+    test "restore defaults a missing profile to :stepwise" do
+      context = %{tenant_id: "t1", execution_id: "exec-rs-np", sync: true}
+      {:ok, runtime} = StepwiseEngine.init(@basic_spec, context)
+      cp = StepwiseEngine.checkpoint(runtime)
+      spec = Map.delete(@basic_spec, :profile)
+
+      assert {:ok, restored} = StepwiseEngine.restore(spec, cp, context)
+      assert restored.profile == :stepwise
+      assert restored.current_state == :greeting
+    end
+
+    test "restore returns an error tuple for an unsupported profile" do
+      context = %{tenant_id: "t1", execution_id: "exec-rs-bad", sync: true}
+      spec = Map.put(@basic_spec, :profile, :fsm)
+
+      assert {:error, {:unsupported_profile, :fsm}} =
+               StepwiseEngine.restore(spec, %{}, context)
+    end
+
     test "checkpoint excludes projection" do
       context = %{tenant_id: "t1", execution_id: "exec-cp2", sync: true}
       {:ok, runtime} = StepwiseEngine.init(@basic_spec, context)
@@ -335,6 +381,132 @@ defmodule WorkflowStem.StepwiseEngineTest do
       projection = StepwiseEngine.get_state(runtime)
       assert :next in projection.available_events
       assert :back in projection.available_events
+    end
+  end
+
+  describe "capability actions" do
+    setup do
+      original = Application.get_env(:mobus_stepwise, :capability_runner_adapter)
+
+      Application.put_env(
+        :mobus_stepwise,
+        :capability_runner_adapter,
+        __MODULE__.ProbeAdapter
+      )
+
+      on_exit(fn ->
+        if original do
+          Application.put_env(:mobus_stepwise, :capability_runner_adapter, original)
+        else
+          Application.delete_env(:mobus_stepwise, :capability_runner_adapter)
+        end
+      end)
+    end
+
+    test "meta reaches the capability input" do
+      spec = %{
+        profile: :stepwise,
+        initial_state: :step_one,
+        states: %{
+          step_one: %{
+            step_number: 1,
+            action: %{type: :capability, handle: "test.meta", triggers: [:next]}
+          },
+          step_two: %{step_number: 2}
+        }
+      }
+
+      context = %{
+        tenant_id: "t1",
+        execution_id: "exec-meta",
+        sync: true,
+        meta: %{"trace_id" => "abc"}
+      }
+
+      assert {:ok, runtime} = StepwiseEngine.init(spec, context)
+      assert runtime.meta == %{"trace_id" => "abc"}
+
+      assert {:ok, updated} = StepwiseEngine.handle_event(runtime, :next, %{})
+      assert updated.context["seen_meta"] == %{"trace_id" => "abc"}
+    end
+
+    test "returns {:wait, runtime, cfg} when a capability waits" do
+      spec = %{
+        profile: :stepwise,
+        initial_state: :step_one,
+        states: %{
+          step_one: %{
+            step_number: 1,
+            action: %{type: :capability, handle: "test.wait", triggers: [:next]}
+          },
+          step_two: %{step_number: 2}
+        }
+      }
+
+      context = %{tenant_id: "t1", execution_id: "exec-wait", sync: true}
+      assert {:ok, runtime} = StepwiseEngine.init(spec, context)
+
+      assert {:wait, updated, %{"kind" => "checkpoint"}} =
+               StepwiseEngine.handle_event(runtime, :next, %{})
+
+      assert updated.current_state == :step_one
+      assert updated.context["paused"] == true
+      assert %Projection{} = updated.projection
+    end
+  end
+
+  describe "projection_enricher" do
+    test "uses the enricher's extensions in the projection" do
+      spec = Map.put(@basic_spec, :projection_enricher, __MODULE__.Enricher)
+
+      context = %{
+        tenant_id: "t1",
+        execution_id: "exec-enrich",
+        sync: true,
+        meta: %{"trace_id" => "abc"}
+      }
+
+      assert {:ok, runtime} = StepwiseEngine.init(spec, context)
+
+      assert runtime.projection.extensions == %{
+               meta: %{"trace_id" => "abc"},
+               enriched_execution_id: "exec-enrich"
+             }
+    end
+  end
+
+  describe "transition policy" do
+    test "an invalid redirect target becomes a blocked reason" do
+      spec = Map.put(@basic_spec, :transition_policy, __MODULE__.RedirectPolicy)
+      context = %{tenant_id: "t1", execution_id: "exec-redirect", sync: true}
+      {:ok, runtime} = StepwiseEngine.init(spec, context)
+
+      assert {:ok, updated} = StepwiseEngine.handle_event(runtime, :next, %{})
+      assert updated.current_state == :greeting
+      assert updated.blocked_reasons[:next] == {:invalid_redirect_target, :nowhere}
+      assert updated.projection.blocked_reasons[:next] == {:invalid_redirect_target, :nowhere}
+    end
+  end
+
+  defmodule ProbeAdapter do
+    def execute(_tenant_id, "test.meta", input) do
+      {:ok, %{context: %{"seen_meta" => input.meta}}}
+    end
+
+    def execute(_tenant_id, "test.wait", _input) do
+      {:wait, %{context: %{"paused" => true}, wait: %{"kind" => "checkpoint"}}}
+    end
+  end
+
+  defmodule Enricher do
+    def enrich(base, runtime) do
+      Map.put(base, :enriched_execution_id, runtime.execution_id)
+    end
+  end
+
+  defmodule RedirectPolicy do
+    def allow_transition?(_spec, _runtime, _from, _to, _event) do
+      {:redirect, :nowhere}
     end
   end
 end
