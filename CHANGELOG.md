@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.0 (November 6, 2026) — The first step runs in the runner
+## v0.5.0 (November 7, 2026) — The first step runs in the runner
 
 ### Changed
 
@@ -31,6 +31,11 @@
   already did a raise or an exit.
 - A control store that fails to give a pause report leaves the default
   report (it used to be `:ok`).
+
+### Dependencies
+
+- Requires `mobus_stepwise ~> 0.3` (was `~> 0.2.0`), so the stepwise and
+  flow engine can take the current 0.3.x line.
 
 ### Fixed
 
