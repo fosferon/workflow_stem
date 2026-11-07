@@ -43,7 +43,8 @@ defmodule WorkflowStem.Components.FsmTransition do
     |> maybe_put_wait(wait_cfg)
   end
 
-  def call(event, _opts), do: Map.put(event, :status, :error) |> Map.put(:error, :invalid_transition_shape)
+  def call(event, _opts),
+    do: Map.put(event, :status, :error) |> Map.put(:error, :invalid_transition_shape)
 
   defp maybe_put_wait(event, nil), do: event
   defp maybe_put_wait(event, false), do: event
@@ -51,6 +52,7 @@ defmodule WorkflowStem.Components.FsmTransition do
   defp maybe_put_wait(event, other), do: Map.put(event, :wait, %{value: other})
 
   defp normalize_event_key(event) when is_atom(event), do: event
+
   defp normalize_event_key(event) when is_binary(event) do
     try do
       String.to_existing_atom(event)

@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.0 (unreleased; dated when cut) — The first step runs in the runner
+## v0.5.0 (November 6, 2026) — The first step runs in the runner
 
 ### Changed
 

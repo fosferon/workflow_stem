@@ -1,14 +1,38 @@
 defmodule WorkflowStem.Persistence do
-  @moduledoc false
+  @moduledoc """
+  Persistence adapter facade for workflow executions and checkpoints.
+
+  Reads the adapter module from `:workflow_stem, :persistence_adapter`
+  (a module implementing `WorkflowStem.Adapters.PersistenceAdapter`; the value
+  must be a module name or `nil`).
+  With no adapter configured, persistence is disabled:
+
+    * `save_execution/2` and `save_checkpoint/3` return `{:ok, :skipped}`;
+    * `get_execution/2` returns `{:error, :persistence_disabled}`;
+    * `list_executions/2` returns `{:ok, []}` — indistinguishable from a
+      tenant with no executions, so check `enabled?/0` when that matters.
+
+  Configure an adapter with:
+
+  ```elixir
+  config :workflow_stem, persistence_adapter: MyApp.WorkflowPersistence
+  ```
+  """
 
   @spec adapter() :: module() | nil
   def adapter do
     Application.get_env(:workflow_stem, :persistence_adapter)
   end
 
+  @doc """
+  Returns `true` when a configured adapter module implements
+  `save_execution/2`. Loads the adapter module if it is not loaded yet.
+  """
   @spec enabled?() :: boolean()
   def enabled? do
-    is_atom(adapter()) and function_exported?(adapter(), :save_execution, 2)
+    mod = adapter()
+
+    is_atom(mod) and Code.ensure_loaded?(mod) and function_exported?(mod, :save_execution, 2)
   end
 
   @spec save_execution(String.t(), map()) :: {:ok, term()} | {:error, term()}

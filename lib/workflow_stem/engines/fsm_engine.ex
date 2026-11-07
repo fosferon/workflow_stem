@@ -128,13 +128,16 @@ defmodule WorkflowStem.Engines.FsmEngine do
         execution_id: execution_id,
         tenant_id: tenant_id,
         spec: ir,
-        current_state: Map.get(checkpoint, :current_state) || Map.get(checkpoint, "current_state"),
+        current_state:
+          Map.get(checkpoint, :current_state) || Map.get(checkpoint, "current_state"),
         context: Map.get(checkpoint, :context) || Map.get(checkpoint, "context") || %{},
         artifacts: Map.get(checkpoint, :artifacts) || Map.get(checkpoint, "artifacts") || %{},
         history: Map.get(checkpoint, :history) || Map.get(checkpoint, "history") || [],
         trace: Map.get(checkpoint, :trace) || Map.get(checkpoint, "trace") || [],
-        blocked_reasons: Map.get(checkpoint, :blocked_reasons) || Map.get(checkpoint, "blocked_reasons") || %{},
-        breakpoint_hits: Map.get(checkpoint, :breakpoint_hits) || Map.get(checkpoint, "breakpoint_hits") || []
+        blocked_reasons:
+          Map.get(checkpoint, :blocked_reasons) || Map.get(checkpoint, "blocked_reasons") || %{},
+        breakpoint_hits:
+          Map.get(checkpoint, :breakpoint_hits) || Map.get(checkpoint, "breakpoint_hits") || []
       }
 
       {:ok, compute_projection(runtime)}
@@ -239,7 +242,8 @@ defmodule WorkflowStem.Engines.FsmEngine do
   end
 
   defp fetch_initial_state(spec, runtime_context) do
-    override = Map.get(runtime_context, :initial_state) || Map.get(runtime_context, "initial_state")
+    override =
+      Map.get(runtime_context, :initial_state) || Map.get(runtime_context, "initial_state")
 
     candidate =
       cond do

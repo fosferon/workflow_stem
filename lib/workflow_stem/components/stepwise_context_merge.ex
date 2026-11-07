@@ -9,4 +9,3 @@ defmodule WorkflowStem.Components.StepwiseContextMerge do
 
   defdelegate call(event, opts), to: Mobus.Stepwise.Components.StepwiseContextMerge
 end
-

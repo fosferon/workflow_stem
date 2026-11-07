@@ -7,7 +7,13 @@ defmodule WorkflowStem.StepwiseActionTest do
     setup do
       # Configure capability runner
       original = Application.get_env(:workflow_stem, :capability_runner_adapter)
-      Application.put_env(:workflow_stem, :capability_runner_adapter, WorkflowStem.TestCapabilityRunner)
+
+      Application.put_env(
+        :workflow_stem,
+        :capability_runner_adapter,
+        WorkflowStem.TestCapabilityRunner
+      )
+
       on_exit(fn -> Application.put_env(:workflow_stem, :capability_runner_adapter, original) end)
       :ok
     end
@@ -25,7 +31,13 @@ defmodule WorkflowStem.StepwiseActionTest do
             }
           }
         },
-        runtime: %{current_state: :step_1, tenant_id: "t1", context: %{}, artifacts: %{}, trace: []},
+        runtime: %{
+          current_state: :step_1,
+          tenant_id: "t1",
+          context: %{},
+          artifacts: %{},
+          trace: []
+        },
         event: :next,
         payload: %{"input" => "hello"},
         status: :ok
@@ -73,7 +85,13 @@ defmodule WorkflowStem.StepwiseActionTest do
             }
           }
         },
-        runtime: %{current_state: :step_1, tenant_id: "t1", context: %{}, artifacts: %{}, trace: []},
+        runtime: %{
+          current_state: :step_1,
+          tenant_id: "t1",
+          context: %{},
+          artifacts: %{},
+          trace: []
+        },
         event: :next,
         payload: %{},
         status: :ok

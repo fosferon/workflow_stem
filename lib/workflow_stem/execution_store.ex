@@ -81,7 +81,9 @@ defmodule WorkflowStem.ExecutionStore do
     case Map.fetch(state.by_execution_id, execution_id) do
       {:ok, entry} ->
         {:reply, {:ok, entry}, state}
-      :error -> {:reply, {:error, :not_found}, state}
+
+      :error ->
+        {:reply, {:error, :not_found}, state}
     end
   end
 

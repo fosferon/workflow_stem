@@ -83,11 +83,17 @@ defmodule WorkflowStem.Engines.StepwiseEngine do
     runtime_context = inject_default_pipeline(runtime_context)
 
     case Foundation.init(spec, runtime_context) do
-      {:ok, runtime} -> {:ok, convert_runtime(runtime)}
-      {:wait, runtime, cfg} -> {:wait, convert_runtime(runtime), cfg}
+      {:ok, runtime} ->
+        {:ok, convert_runtime(runtime)}
+
+      {:wait, runtime, cfg} ->
+        {:wait, convert_runtime(runtime), cfg}
+
       {:error, {:initial_entry_action_failed, reason, runtime}} ->
         {:error, {:initial_entry_action_failed, reason, convert_runtime(runtime)}}
-      {:error, _} = err -> err
+
+      {:error, _} = err ->
+        err
     end
   end
 

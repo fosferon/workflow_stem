@@ -23,7 +23,9 @@ defmodule WorkflowStem.Components.FsmAction do
         runtime =
           runtime
           |> Map.put(:context, apply_save_step(runtime, step_key, payload))
-          |> Map.update(:trace, [], fn trace -> trace ++ [%{kind: :action, handle: :save_step, key: step_key}] end)
+          |> Map.update(:trace, [], fn trace ->
+            trace ++ [%{kind: :action, handle: :save_step, key: step_key}]
+          end)
 
         %{event | runtime: runtime}
 
@@ -43,24 +45,40 @@ defmodule WorkflowStem.Components.FsmAction do
             runtime =
               runtime
               |> Map.update(:context, %{}, fn ctx -> Map.merge(ctx, context_updates) end)
-              |> Map.update(:artifacts, %{}, fn artifacts -> Artifacts.merge(artifacts, artifacts_from(out)) end)
-              |> Map.update(:trace, [], fn trace -> trace ++ [%{kind: :action, handle: handle}] end)
+              |> Map.update(:artifacts, %{}, fn artifacts ->
+                Artifacts.merge(artifacts, artifacts_from(out))
+              end)
+              |> Map.update(:trace, [], fn trace ->
+                trace ++ [%{kind: :action, handle: handle}]
+              end)
               |> maybe_put_action_result(out)
 
             %{event | runtime: runtime}
 
           {:ok, %{} = out} ->
-            runtime = runtime |> Map.update(:trace, [], fn trace -> trace ++ [%{kind: :action, handle: handle}] end)
+            runtime =
+              runtime
+              |> Map.update(:trace, [], fn trace ->
+                trace ++ [%{kind: :action, handle: handle}]
+              end)
+
             %{event | runtime: runtime} |> Map.put(:action_result, out)
 
           {:ok, other} ->
-            runtime = runtime |> Map.update(:trace, [], fn trace -> trace ++ [%{kind: :action, handle: handle}] end)
+            runtime =
+              runtime
+              |> Map.update(:trace, [], fn trace ->
+                trace ++ [%{kind: :action, handle: handle}]
+              end)
+
             %{event | runtime: runtime} |> Map.put(:action_result, other)
 
           {:error, reason} ->
             runtime =
               runtime
-              |> Map.update(:blocked_reasons, %{}, fn reasons -> Map.put(reasons, event_name, reason) end)
+              |> Map.update(:blocked_reasons, %{}, fn reasons ->
+                Map.put(reasons, event_name, reason)
+              end)
 
             event
             |> Map.put(:status, :error)
@@ -70,7 +88,8 @@ defmodule WorkflowStem.Components.FsmAction do
     end
   end
 
-  def call(event, _opts), do: Map.put(event, :status, :error) |> Map.put(:error, :invalid_action_shape)
+  def call(event, _opts),
+    do: Map.put(event, :status, :error) |> Map.put(:error, :invalid_action_shape)
 
   defp resolve_transition(spec, event_name) do
     transitions = Map.get(spec, :transitions) || %{}
@@ -92,11 +111,17 @@ defmodule WorkflowStem.Components.FsmAction do
   defp normalize_action(%{"type" => :capability, "handle" => handle}), do: {:capability, handle}
   defp normalize_action(%{type: :save_step} = action), do: {:save_step, Map.get(action, :key)}
   defp normalize_action(%{type: "save_step"} = action), do: {:save_step, Map.get(action, :key)}
-  defp normalize_action(%{"type" => "save_step"} = action), do: {:save_step, Map.get(action, "key")}
-  defp normalize_action(%{"type" => :save_step} = action), do: {:save_step, Map.get(action, "key")}
+
+  defp normalize_action(%{"type" => "save_step"} = action),
+    do: {:save_step, Map.get(action, "key")}
+
+  defp normalize_action(%{"type" => :save_step} = action),
+    do: {:save_step, Map.get(action, "key")}
+
   defp normalize_action(_), do: nil
 
   defp normalize_event_key(event) when is_atom(event), do: event
+
   defp normalize_event_key(event) when is_binary(event) do
     try do
       String.to_existing_atom(event)
@@ -107,7 +132,9 @@ defmodule WorkflowStem.Components.FsmAction do
 
   defp normalize_event_key(_), do: nil
 
-  defp maybe_put_action_result(runtime, %{result: result}), do: Map.put(runtime, :action_result, result)
+  defp maybe_put_action_result(runtime, %{result: result}),
+    do: Map.put(runtime, :action_result, result)
+
   defp maybe_put_action_result(runtime, _), do: runtime
 
   defp artifacts_from(%{artifacts: %{} = artifacts}), do: artifacts

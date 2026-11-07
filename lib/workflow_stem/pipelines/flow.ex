@@ -22,4 +22,3 @@ defmodule WorkflowStem.Pipelines.Flow do
     start(opts)
   end
 end
-

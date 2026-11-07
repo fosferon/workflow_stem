@@ -62,7 +62,11 @@ defmodule WorkflowStem.Registry do
   end
 
   defp discovery_config do
-    Application.get_env(:workflow_stem, :spec_discovery, {:workflow_stem, "Elixir.WorkflowStem.Specs."})
+    Application.get_env(
+      :workflow_stem,
+      :spec_discovery,
+      {:workflow_stem, "Elixir.WorkflowStem.Specs."}
+    )
   end
 
   defp spec_module?(mod, prefix) when is_atom(mod) do

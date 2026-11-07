@@ -137,6 +137,9 @@ defmodule WorkflowStem.EngineRoutedSpecTest do
     # engine may store it as Mobus.Stepwise.Pipeline.Stepwise — both are
     # functionally equivalent. Either is correct for a consumer with no
     # custom pipeline.
-    assert runtime.pipeline_mod in [WorkflowStem.Pipelines.Stepwise, Mobus.Stepwise.Pipeline.Stepwise]
+    assert runtime.pipeline_mod in [
+             WorkflowStem.Pipelines.Stepwise,
+             Mobus.Stepwise.Pipeline.Stepwise
+           ]
   end
 end

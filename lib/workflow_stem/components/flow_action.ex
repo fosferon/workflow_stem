@@ -33,7 +33,9 @@ defmodule WorkflowStem.Components.FlowAction do
       {:error, reason, updated_runtime} ->
         updated_runtime =
           updated_runtime
-          |> Map.update(:blocked_reasons, %{}, fn reasons -> Map.put(reasons, event_name, reason) end)
+          |> Map.update(:blocked_reasons, %{}, fn reasons ->
+            Map.put(reasons, event_name, reason)
+          end)
 
         event
         |> Map.put(:status, :error)
@@ -42,7 +44,8 @@ defmodule WorkflowStem.Components.FlowAction do
     end
   end
 
-  def call(event, _opts), do: Map.put(event, :status, :error) |> Map.put(:error, :invalid_flow_shape)
+  def call(event, _opts),
+    do: Map.put(event, :status, :error) |> Map.put(:error, :invalid_flow_shape)
 
   defp normalize_steps(spec) do
     raw =
@@ -85,28 +88,43 @@ defmodule WorkflowStem.Components.FlowAction do
         steps,
         {:ok, initial_ctx, initial_artifacts, payload, Map.get(runtime, :trace, [])},
         fn
-        {:capability, handle}, {:ok, ctx, artifacts, acc, trace} ->
-          input = %{event: event_name, payload: acc, current_state: nil, context: ctx, artifacts: artifacts}
+          {:capability, handle}, {:ok, ctx, artifacts, acc, trace} ->
+            input = %{
+              event: event_name,
+              payload: acc,
+              current_state: nil,
+              context: ctx,
+              artifacts: artifacts
+            }
 
-          case Capabilities.execute(tenant_id, handle, input) do
-            {:ok, %{context: %{} = updates} = out} ->
-              next_ctx = Map.merge(ctx, updates)
-              next_artifacts = Artifacts.merge(artifacts, artifacts_from(out))
-              next_result = maybe_replace_result(acc, out)
-              {:cont, {:ok, next_ctx, next_artifacts, next_result, trace ++ [%{kind: :flow, handle: handle}]}}
+            case Capabilities.execute(tenant_id, handle, input) do
+              {:ok, %{context: %{} = updates} = out} ->
+                next_ctx = Map.merge(ctx, updates)
+                next_artifacts = Artifacts.merge(artifacts, artifacts_from(out))
+                next_result = maybe_replace_result(acc, out)
 
-            {:ok, %{} = out} ->
-              next_artifacts = Artifacts.merge(artifacts, artifacts_from(out))
-              next_result = maybe_replace_result(acc, out)
-              {:cont, {:ok, ctx, next_artifacts, next_result, trace ++ [%{kind: :flow, handle: handle}]}}
+                {:cont,
+                 {:ok, next_ctx, next_artifacts, next_result,
+                  trace ++ [%{kind: :flow, handle: handle}]}}
 
-            {:ok, other} ->
-              {:cont, {:ok, ctx, artifacts, other, trace ++ [%{kind: :flow, handle: handle}]}}
+              {:ok, %{} = out} ->
+                next_artifacts = Artifacts.merge(artifacts, artifacts_from(out))
+                next_result = maybe_replace_result(acc, out)
 
-            {:error, reason} ->
-              {:halt, {{:error, reason}, ctx, artifacts, acc, trace ++ [%{kind: :flow, handle: handle}]}}
-          end
-      end)
+                {:cont,
+                 {:ok, ctx, next_artifacts, next_result,
+                  trace ++ [%{kind: :flow, handle: handle}]}}
+
+              {:ok, other} ->
+                {:cont, {:ok, ctx, artifacts, other, trace ++ [%{kind: :flow, handle: handle}]}}
+
+              {:error, reason} ->
+                {:halt,
+                 {{:error, reason}, ctx, artifacts, acc,
+                  trace ++ [%{kind: :flow, handle: handle}]}}
+            end
+        end
+      )
 
     case status do
       :ok ->

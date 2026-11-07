@@ -35,4 +35,3 @@ defmodule WorkflowStem.Capabilities do
     end
   end
 end
-

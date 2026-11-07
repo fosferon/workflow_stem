@@ -13,4 +13,3 @@ defmodule WorkflowStem.Adapters.CapabilityRunner do
   @callback execute(Types.tenant_id(), capability_handle(), map()) ::
               {:ok, term()} | {:wait, term()} | {:error, term()} | {:error, term(), map()}
 end
-
