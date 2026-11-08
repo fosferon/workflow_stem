@@ -40,6 +40,8 @@ defmodule WorkflowStem.Engines.StepwiseEngine do
   # compares it against the profiles that actually init in `mobus_stepwise`.
   @supported_profiles [:stepwise, :flow]
 
+  # Public only so the drift test can compare this list against the foundation;
+  # the engine's contract is `WorkflowStem.EngineBehaviour`.
   @doc false
   def supported_profiles, do: @supported_profiles
 
