@@ -34,7 +34,14 @@ defmodule WorkflowStem.Engines.StepwiseEngine do
   alias WorkflowStem.Projection
   alias WorkflowStem.Pipelines.Stepwise, as: DefaultPipeline
 
+  # Mirrors `Mobus.Stepwise.Engine`'s private profile table as of 0.3.x. The
+  # foundation exposes no profile list, so this list is duplicated here; keep
+  # it in lockstep when the dependency adds or drops a profile. The test suite
+  # compares it against the profiles that actually init in `mobus_stepwise`.
   @supported_profiles [:stepwise, :flow]
+
+  @doc false
+  def supported_profiles, do: @supported_profiles
 
   # ── Inject workflow_stem default pipeline ──────────────────────────
 
@@ -84,6 +91,9 @@ defmodule WorkflowStem.Engines.StepwiseEngine do
   # `Map.fetch!/2`, which raises for a nil or unknown profile. Default a
   # missing profile to :stepwise and reject profiles the foundation does
   # not know before delegating.
+  # `handle_event/3`, `get_state/1` and `checkpoint/1` need no guard: they
+  # resolve the profile from the runtime, not the spec, and the foundation
+  # falls back to `:stepwise` when the runtime has no profile.
   defp ensure_supported_profile(spec) do
     profile =
       spec

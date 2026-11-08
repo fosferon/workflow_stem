@@ -3,6 +3,7 @@ defmodule WorkflowStem.StepwiseEngineTest do
 
   alias WorkflowStem.Engines.StepwiseEngine
   alias WorkflowStem.Projection
+  alias Mobus.Stepwise.Engine, as: Foundation
 
   @basic_spec %{
     profile: :stepwise,
@@ -121,6 +122,34 @@ defmodule WorkflowStem.StepwiseEngineTest do
       for profile <- [:fsm, "wizard"] do
         spec = Map.put(@basic_spec, :profile, profile)
         assert {:error, {:unsupported_profile, ^profile}} = StepwiseEngine.init(spec, context)
+      end
+    end
+
+    test "supported_profiles matches the profiles that init in mobus_stepwise" do
+      profiles = foundation_profiles()
+
+      assert Enum.sort(StepwiseEngine.supported_profiles()) == profiles
+
+      for profile <- profiles do
+        spec = minimal_spec(profile)
+
+        assert {:ok, foundation_runtime} =
+                 Foundation.init(spec, %{
+                   tenant_id: "t1",
+                   execution_id: "exec-foundation-#{profile}",
+                   sync: true
+                 })
+
+        assert foundation_runtime.profile == profile
+
+        assert {:ok, runtime} =
+                 StepwiseEngine.init(spec, %{
+                   tenant_id: "t1",
+                   execution_id: "exec-shim-#{profile}",
+                   sync: true
+                 })
+
+        assert runtime.profile == profile
       end
     end
 
@@ -256,13 +285,24 @@ defmodule WorkflowStem.StepwiseEngineTest do
       assert length(history) >= 2
     end
 
-    test "stage completion triggers next_event via transition", %{runtime: runtime} do
+    test "stage completion emits next_event and advances on that event", %{runtime: runtime} do
       # First chat (enter already fired at init)
       {:ok, r2} = StepwiseEngine.handle_event(runtime, :chat_message, %{"message" => "hello"})
 
       # The test handler sets next_event when completion_signal is configured
       # and the handler simulates stage complete
-      assert get_in(r2, [:context, "conversation_response"]) != nil
+      assert r2.context["next_event"] == "stage_a_complete"
+      assert r2.current_state == :stage_a
+
+      # Dispatching that emitted event takes the configured transition.
+      assert {:ok, r3} = StepwiseEngine.handle_event(r2, :stage_a_complete, %{})
+
+      assert r3.current_state == :stage_b
+      assert r3.projection.current_state == :stage_b
+      assert r3.context["next_event"] == "stage_b_complete"
+
+      assert %{event: :stage_a_complete, from: :stage_a, to: :stage_b} =
+               List.last(r3.history)
     end
   end
 
@@ -381,6 +421,43 @@ defmodule WorkflowStem.StepwiseEngineTest do
       projection = StepwiseEngine.get_state(runtime)
       assert :next in projection.available_events
       assert :back in projection.available_events
+    end
+  end
+
+  describe ":flow profile through the shim" do
+    test "init, get_state, handle_event, checkpoint and restore keep profile: :flow" do
+      spec = %{
+        profile: :flow,
+        initial_state: :start,
+        nodes: %{start: %{type: :task}, done: %{type: :end}},
+        edges: [%{from: :start, to: :done}]
+      }
+
+      context = %{tenant_id: "t1", execution_id: "exec-flow", sync: true}
+
+      assert {:ok, runtime} = StepwiseEngine.init(spec, context)
+      assert runtime.profile == :flow
+      assert runtime.projection.profile == :flow
+      assert runtime.projection.current_state == :start
+
+      projection = StepwiseEngine.get_state(runtime)
+      assert projection.profile == :flow
+      assert projection.current_state == :start
+
+      assert {:ok, advanced} = StepwiseEngine.handle_event(runtime, :next, %{})
+      assert advanced.profile == :flow
+      assert advanced.projection.profile == :flow
+      assert advanced.projection.current_state == :done
+
+      checkpoint = StepwiseEngine.checkpoint(advanced)
+      assert checkpoint.profile == :flow
+      assert checkpoint.current_state == :done
+
+      assert {:ok, restored} = StepwiseEngine.restore(spec, checkpoint, context)
+      assert restored.profile == :flow
+      assert restored.projection.profile == :flow
+      assert restored.projection.current_state == :done
+      assert StepwiseEngine.get_state(restored).profile == :flow
     end
   end
 
@@ -508,5 +585,30 @@ defmodule WorkflowStem.StepwiseEngineTest do
     def allow_transition?(_spec, _runtime, _from, _to, _event) do
       {:redirect, :nowhere}
     end
+  end
+
+  defp foundation_profiles do
+    {:ok, modules} = :application.get_key(:mobus_stepwise, :modules)
+
+    modules
+    |> Enum.filter(fn module ->
+      String.starts_with?(Atom.to_string(module), "Elixir.Mobus.Stepwise.Profiles.")
+    end)
+    |> Enum.map(fn module ->
+      module
+      |> Module.split()
+      |> List.last()
+      |> Macro.underscore()
+      |> String.to_atom()
+    end)
+    |> Enum.sort()
+  end
+
+  defp minimal_spec(:flow) do
+    %{profile: :flow, initial_state: :start, nodes: %{start: %{type: :task}}, edges: []}
+  end
+
+  defp minimal_spec(profile) do
+    %{profile: profile, initial_state: :start, states: %{start: %{step_number: 0}}}
   end
 end
