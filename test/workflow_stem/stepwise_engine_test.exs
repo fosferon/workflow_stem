@@ -587,21 +587,26 @@ defmodule WorkflowStem.StepwiseEngineTest do
     end
   end
 
+  # The foundation exposes no profile list. An unknown profile makes its
+  # `Map.fetch!/2` raise a `KeyError` whose term is the private profile table,
+  # so derive the accepted keys from there; the test loop then proves each one
+  # actually initializes (and handles keys whose module name differs).
   defp foundation_profiles do
-    {:ok, modules} = :application.get_key(:mobus_stepwise, :modules)
+    try do
+      Foundation.init(
+        %{profile: :__unsupported_profile__, initial_state: :start},
+        probe_context(:unsupported)
+      )
+    rescue
+      error in KeyError ->
+        error.term
+        |> Map.keys()
+        |> Enum.sort()
+    end
+  end
 
-    modules
-    |> Enum.filter(fn module ->
-      String.starts_with?(Atom.to_string(module), "Elixir.Mobus.Stepwise.Profiles.")
-    end)
-    |> Enum.map(fn module ->
-      module
-      |> Module.split()
-      |> List.last()
-      |> Macro.underscore()
-      |> String.to_atom()
-    end)
-    |> Enum.sort()
+  defp probe_context(profile) do
+    %{tenant_id: "t1", execution_id: "exec-foundation-probe-#{profile}", sync: true}
   end
 
   defp minimal_spec(:flow) do
