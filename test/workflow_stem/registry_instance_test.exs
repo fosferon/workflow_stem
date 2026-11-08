@@ -54,10 +54,22 @@ defmodule WorkflowStem.RegistryInstanceTest do
   end
 
   setup do
+    # Derive the names with the registry itself so a change to its naming
+    # scheme cannot leave stale modules loaded.
+    generated_modules =
+      for agent_id <- ["agent-a", "agent-b"] do
+        Registry.generated_module_name(agent_id, "registry-test-routed")
+      end
+
+    # Tests compile the same generated module names, so unload any leftover
+    # version to keep the compiler from warning about a redefinition.
+    Enum.each(generated_modules, &purge_module/1)
+
     on_exit(fn ->
       Registry.release_instance("agent-a", "registry-test-routed")
       Registry.release_instance("agent-b", "registry-test-routed")
       Registry.release_instance("agent-a", "registry-test-static")
+      Enum.each(generated_modules, &purge_module/1)
     end)
 
     :ok
@@ -131,11 +143,20 @@ defmodule WorkflowStem.RegistryInstanceTest do
     test "after release, ensure_instance recompiles and caches again" do
       {:ok, mod1} = Registry.ensure_instance("agent-a", "registry-test-routed", routed_spec())
       :ok = Registry.release_instance("agent-a", "registry-test-routed")
+      purge_module(mod1)
 
       {:ok, mod2} = Registry.ensure_instance("agent-a", "registry-test-routed", routed_spec())
       # Same module name, but freshly re-compiled — the generated name is
       # derived from agent_id + handle, so it's stable across release/recompile.
       assert mod1 == mod2
     end
+  end
+
+  defp purge_module(nil), do: :ok
+
+  defp purge_module(module) do
+    :code.purge(module)
+    :code.delete(module)
+    :ok
   end
 end

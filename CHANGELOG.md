@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.0 (November 6, 2026) — The first step runs in the runner
+## v0.5.0 (November 8, 2026) — The first step runs in the runner
 
 ### Changed
 
@@ -39,6 +39,17 @@
   `CaseClauseError` in the caller. It now waits like any later step: it
   emits `:step_started`, is checkpointed, emits its wait (`:checkpoint` or
   `:paused`) and resumes on `{:resume, payload}`.
+- **A spec without a profile.** A spec with no `:profile` (or
+  `profile: nil`) no longer raises a `KeyError` with `mobus_stepwise` 0.3;
+  it defaults to `:stepwise`. An unsupported profile returns
+  `{:error, {:unsupported_profile, profile}}` instead of raising.
+
+### Dependencies
+
+- Requires `mobus_stepwise ~> 0.3.0` (was `~> 0.2.0`), so the stepwise
+  engine runs on the 0.3.x line.
+- Lock updates pulled in transitively by that bump: `jason` 1.4.5 and
+  `telemetry` 1.4.2.
 
 ## v0.4.0 (August 15, 2026) — Full ALF routing emission
 

@@ -34,6 +34,17 @@ defmodule WorkflowStem.Engines.StepwiseEngine do
   alias WorkflowStem.Projection
   alias WorkflowStem.Pipelines.Stepwise, as: DefaultPipeline
 
+  # Mirrors `Mobus.Stepwise.Engine`'s private profile table as of 0.3.x. The
+  # foundation exposes no profile list, so this list is duplicated here; keep
+  # it in lockstep when the dependency adds or drops a profile. The test suite
+  # compares it against the profiles that actually init in `mobus_stepwise`.
+  @supported_profiles [:stepwise, :flow]
+
+  # Public only so the drift test can compare this list against the foundation;
+  # the engine's contract is `WorkflowStem.EngineBehaviour`.
+  @doc false
+  def supported_profiles, do: @supported_profiles
+
   # ── Inject workflow_stem default pipeline ──────────────────────────
 
   # The foundation engine resolves its own default
@@ -76,24 +87,48 @@ defmodule WorkflowStem.Engines.StepwiseEngine do
 
   defp convert_runtime(rt), do: rt
 
+  # ── Profile guard ──────────────────────────────────────────────────
+
+  # mobus_stepwise 0.3 dispatches on the normalized spec profile via
+  # `Map.fetch!/2`, which raises for a nil or unknown profile. Default a
+  # missing profile to :stepwise and reject profiles the foundation does
+  # not know before delegating.
+  # `handle_event/3`, `get_state/1` and `checkpoint/1` need no guard: they
+  # resolve the profile from the runtime, not the spec, and the foundation
+  # falls back to `:stepwise` when the runtime has no profile.
+  defp ensure_supported_profile(spec) do
+    profile =
+      spec
+      |> Mobus.Stepwise.IR.normalize()
+      |> Map.get(:profile)
+
+    cond do
+      is_nil(profile) -> {:ok, Map.put(spec, :profile, :stepwise)}
+      profile in @supported_profiles -> {:ok, spec}
+      true -> {:error, {:unsupported_profile, profile}}
+    end
+  end
+
   # ── Delegation ─────────────────────────────────────────────────────
 
   @impl true
   def init(spec, runtime_context) do
-    runtime_context = inject_default_pipeline(runtime_context)
+    with {:ok, spec} <- ensure_supported_profile(spec) do
+      runtime_context = inject_default_pipeline(runtime_context)
 
-    case Foundation.init(spec, runtime_context) do
-      {:ok, runtime} ->
-        {:ok, convert_runtime(runtime)}
+      case Foundation.init(spec, runtime_context) do
+        {:ok, runtime} ->
+          {:ok, convert_runtime(runtime)}
 
-      {:wait, runtime, cfg} ->
-        {:wait, convert_runtime(runtime), cfg}
+        {:wait, runtime, cfg} ->
+          {:wait, convert_runtime(runtime), cfg}
 
-      {:error, {:initial_entry_action_failed, reason, runtime}} ->
-        {:error, {:initial_entry_action_failed, reason, convert_runtime(runtime)}}
+        {:error, {:initial_entry_action_failed, reason, runtime}} ->
+          {:error, {:initial_entry_action_failed, reason, convert_runtime(runtime)}}
 
-      {:error, _} = err ->
-        err
+        {:error, _} = err ->
+          err
+      end
     end
   end
 
@@ -121,11 +156,13 @@ defmodule WorkflowStem.Engines.StepwiseEngine do
 
   @impl true
   def restore(spec, checkpoint, runtime_context) do
-    runtime_context = inject_default_pipeline(runtime_context)
+    with {:ok, spec} <- ensure_supported_profile(spec) do
+      runtime_context = inject_default_pipeline(runtime_context)
 
-    case Foundation.restore(spec, checkpoint, runtime_context) do
-      {:ok, runtime} -> {:ok, convert_runtime(runtime)}
-      {:error, _} = err -> err
+      case Foundation.restore(spec, checkpoint, runtime_context) do
+        {:ok, runtime} -> {:ok, convert_runtime(runtime)}
+        {:error, _} = err -> err
+      end
     end
   end
 
