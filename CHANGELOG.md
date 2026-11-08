@@ -48,6 +48,8 @@
 
 - Requires `mobus_stepwise ~> 0.3.0` (was `~> 0.2.0`), so the stepwise
   engine runs on the 0.3.x line.
+- Lock updates pulled in transitively by that bump: `jason` 1.4.5 and
+  `telemetry` 1.4.2.
 
 ## v0.4.0 (August 15, 2026) — Full ALF routing emission
 
