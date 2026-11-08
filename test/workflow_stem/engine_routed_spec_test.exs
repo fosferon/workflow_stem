@@ -75,6 +75,10 @@ defmodule WorkflowStem.EngineRoutedSpecTest do
     :ok
   end
 
+  # The generated routed pipeline does not surface a projection, so the
+  # foundation logs a `:missing_projection` warning on each engine call. It is
+  # expected here: this test only exercises routing, not projection.
+  @tag :capture_log
   test "engine.init + handle_event routes through the declared branch (end-to-end)" do
     # 1. Compile a per-agent pipeline for a routed spec.
     {:ok, pipeline_mod} =

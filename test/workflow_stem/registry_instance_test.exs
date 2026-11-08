@@ -11,6 +11,11 @@ defmodule WorkflowStem.RegistryInstanceTest do
 
   alias WorkflowStem.{IR, Registry}
 
+  @generated_modules [
+    Module.concat([WorkflowStem.Generated, "agent_a", "registry_test_routed"]),
+    Module.concat([WorkflowStem.Generated, "agent_b", "registry_test_routed"])
+  ]
+
   # Passthrough stage module — needs to be a real, loaded module.
   defmodule PassThrough do
     def call(event, _opts), do: event
@@ -54,10 +59,15 @@ defmodule WorkflowStem.RegistryInstanceTest do
   end
 
   setup do
+    # Tests compile the same generated module names, so unload any leftover
+    # version to keep the compiler from warning about a redefinition.
+    purge_generated_modules()
+
     on_exit(fn ->
       Registry.release_instance("agent-a", "registry-test-routed")
       Registry.release_instance("agent-b", "registry-test-routed")
       Registry.release_instance("agent-a", "registry-test-static")
+      purge_generated_modules()
     end)
 
     :ok
@@ -131,11 +141,24 @@ defmodule WorkflowStem.RegistryInstanceTest do
     test "after release, ensure_instance recompiles and caches again" do
       {:ok, mod1} = Registry.ensure_instance("agent-a", "registry-test-routed", routed_spec())
       :ok = Registry.release_instance("agent-a", "registry-test-routed")
+      purge_module(mod1)
 
       {:ok, mod2} = Registry.ensure_instance("agent-a", "registry-test-routed", routed_spec())
       # Same module name, but freshly re-compiled — the generated name is
       # derived from agent_id + handle, so it's stable across release/recompile.
       assert mod1 == mod2
     end
+  end
+
+  defp purge_generated_modules do
+    Enum.each(@generated_modules, &purge_module/1)
+  end
+
+  defp purge_module(nil), do: :ok
+
+  defp purge_module(module) do
+    :code.purge(module)
+    :code.delete(module)
+    :ok
   end
 end
