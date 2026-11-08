@@ -159,6 +159,18 @@ defmodule WorkflowStem.Registry do
     end
   end
 
+  # Undocumented on purpose: internal naming, exposed so callers/tests that
+  # unload a generated module use the same derivation as the registry.
+  @doc false
+  @spec generated_module_name(term(), String.t()) :: module()
+  def generated_module_name(agent_id, workflow_handle) do
+    Module.concat([
+      WorkflowStem.Generated,
+      sanitize(agent_id),
+      sanitize(workflow_handle)
+    ])
+  end
+
   # ── Private ─────────────────────────────────────────────────────────
 
   defp ensure_compiled_instance(agent_id, workflow_handle, spec) do
@@ -211,14 +223,6 @@ defmodule WorkflowStem.Registry do
 
   defp instance_key(agent_id, workflow_handle) do
     {__MODULE__, :instance, agent_id, workflow_handle}
-  end
-
-  defp generated_module_name(agent_id, workflow_handle) do
-    Module.concat([
-      WorkflowStem.Generated,
-      sanitize(agent_id),
-      sanitize(workflow_handle)
-    ])
   end
 
   defp sanitize(value) do
